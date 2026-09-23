@@ -1,5 +1,5 @@
-//go:build mint
-// +build mint
+//go:build tests
+// +build tests
 
 /*
 *

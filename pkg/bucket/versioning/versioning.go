@@ -28,8 +28,7 @@ type State string
 
 // Various supported states
 const (
-	Enabled State = "Enabled"
-	// Disabled  State = "Disabled" only used by MFA Delete not supported yet.
+	Enabled   State = "Enabled"
 	Suspended State = "Suspended"
 )
 
@@ -37,18 +36,11 @@ const (
 type Versioning struct {
 	XMLNS   string   `xml:"xmlns,attr,omitempty"`
 	XMLName xml.Name `xml:"VersioningConfiguration"`
-	// MFADelete State    `xml:"MFADelete,omitempty"` // not supported yet.
-	Status State `xml:"Status,omitempty"`
+	Status  State    `xml:"Status,omitempty"`
 }
 
 // Validate - validates the versioning configuration
 func (v Versioning) Validate() error {
-	// Not supported yet
-	// switch v.MFADelete {
-	// case Enabled, Disabled:
-	// default:
-	// 	return Errorf("unsupported MFADelete state %s", v.MFADelete)
-	// }
 	switch v.Status {
 	case Enabled, Suspended:
 	default:

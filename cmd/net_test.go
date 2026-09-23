@@ -275,7 +275,7 @@ func TestExtractHostPort(t *testing.T) {
 		{"", "", "", errors.New("unable to process empty address")},
 		{"localhost:9000", "localhost", "9000", nil},
 		{"http://:9000/", "", "9000", nil},
-		{"http://8.8.8.8:9000/", "8.8.8.8", "9000", nil},
+		{"http://9.9.9.9:9000/", "9.9.9.9", "9000", nil},
 		{"https://facebook.com:9000/", "facebook.com", "9000", nil},
 	}
 
@@ -316,7 +316,7 @@ func TestSameLocalAddrs(t *testing.T) {
 		{"localhost:9000", "http://localhost:9000", true, nil},
 		{"http://localhost:9000", ":9000", true, nil},
 		{"http://localhost:9000", "http://localhost:9000", true, nil},
-		{"http://8.8.8.8:9000", "http://localhost:9000", false, nil},
+		{"http://9.9.9.9:9000", "http://localhost:9000", false, nil},
 	}
 
 	for _, testCase := range testCases {

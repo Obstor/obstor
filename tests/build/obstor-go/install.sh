@@ -22,7 +22,7 @@ if [ -z "$OBSTOR_GO_VERSION" ]; then
 	exit 1
 fi
 
-test_run_dir="$MINT_RUN_CORE_DIR/obstor-go"
+test_run_dir="$TESTS_RUN_CORE_DIR/obstor-go"
 curl -sL -o "${test_run_dir}/main.go" "https://raw.githubusercontent.com/obstor/obstor-go/${OBSTOR_GO_VERSION}/functional_tests.go"
 
 # Extract only the function from versioning_test.go (skip package, imports, comments)

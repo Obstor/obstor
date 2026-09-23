@@ -11,13 +11,13 @@ import {
   getUploadURL,
 } from "@/lib/actions";
 import { safeDisplayName } from "@/lib/safe-name";
+import { Dialog } from "./Dialog";
 
 interface FileEntry {
   name: string;
   size: string;
   sizeBytes: number;
   lastModified: string;
-  contentType: string;
   etag: string;
   locations: string[];
 }
@@ -113,9 +113,7 @@ function browserReducer(state: BrowserState, action: BrowserAction): BrowserStat
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  ObjectToolbar                                                             */
-/* -------------------------------------------------------------------------- */
+// ObjectToolbar
 
 function ObjectToolbar({
   filter,
@@ -131,17 +129,17 @@ function ObjectToolbar({
   onUploadClick: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between border-border border-b px-4 py-3">
+    <div className="flex items-center justify-between border-amber-200/10 border-b px-4 py-3">
       <div className="flex items-center gap-3">
         {/* Search */}
         <div className="relative">
-          <span className="icon-[lucide--search] absolute top-1/2 left-2.5 -translate-y-1/2 text-text-muted text-xs" />
+          <span className="icon-[lucide--search] absolute top-1/2 left-2.5 -translate-y-1/2 text-stone-600 text-xs" />
           <input
             type="text"
             value={filter}
             onChange={(e) => onFilterChange(e.target.value)}
             placeholder="Filter objects"
-            className="rounded-md border border-border bg-surface py-1.5 pr-3 pl-8 font-mono text-xs outline-none placeholder:text-text-muted focus:border-accent"
+            className="rounded-md border border-amber-200/5 bg-surface py-1.5 pr-3 pl-8 font-mono text-xs outline-none placeholder:text-stone-600 focus:border-amber-500"
           />
         </div>
 
@@ -149,9 +147,9 @@ function ObjectToolbar({
           <button
             type="button"
             onClick={onBulkDelete}
-            className="flex items-center gap-1.5 rounded-md border border-danger/20 bg-danger/5 px-3 py-1.5 font-body text-danger text-xs transition-colors hover:bg-danger/10"
+            className="flex items-center gap-1.5 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-1.5 font-body text-red-400 text-xs transition-colors hover:bg-red-500/10"
           >
-            <span className="icon-[lucide--trash-2] text-xs" />
+            <span className="icon-[lucide--trash-2] block text-xs" />
             Delete {selectedCount}
           </button>
         )}
@@ -161,9 +159,9 @@ function ObjectToolbar({
         <button
           type="button"
           onClick={onUploadClick}
-          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 font-body font-medium text-black text-xs transition-colors hover:bg-accent-bright"
+          className="flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 font-body font-medium text-black text-xs transition-colors hover:bg-amber-400"
         >
-          <span className="icon-[lucide--upload] text-xs" />
+          <span className="icon-[lucide--upload] block text-xs" />
           Upload
         </button>
       </div>
@@ -171,31 +169,28 @@ function ObjectToolbar({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  UploadProgress                                                            */
-/* -------------------------------------------------------------------------- */
-
+// UploadProgress
 function UploadProgress({ uploading }: { uploading: { name: string; progress: number }[] }) {
   if (uploading.length === 0) return null;
   return (
-    <div className="border-border border-b bg-surface px-4 py-3">
+    <div className="border-amber-200/10 border-b bg-surface px-4 py-3">
       <div className="mb-2 flex items-center gap-2">
-        <span className="icon-[lucide--upload] text-accent text-xs" />
-        <span className="font-body text-text-secondary text-xs">
+        <span className="icon-[lucide--upload] text-amber-500 text-xs" />
+        <span className="font-body text-stone-400 text-xs">
           Uploading {uploading.length} file{uploading.length > 1 ? "s" : ""}
         </span>
       </div>
       {uploading.map((u) => (
         <div key={u.name} className="mb-1.5 last:mb-0">
           <div className="mb-1 flex items-center justify-between">
-            <span className="truncate font-mono text-[11px] text-text-secondary">
+            <span className="truncate font-mono text-[11px] text-stone-400">
               <bdi>{safeDisplayName(u.name)}</bdi>
             </span>
-            <span className="font-mono text-[10px] text-text-muted">{u.progress}%</span>
+            <span className="font-mono text-[10px] text-stone-600">{u.progress}%</span>
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-surface-overlay">
             <div
-              className="h-full rounded-full bg-accent transition-all"
+              className="h-full rounded-full bg-amber-500 transition-all"
               style={{ width: `${u.progress}%` }}
             />
           </div>
@@ -205,10 +200,7 @@ function UploadProgress({ uploading }: { uploading: { name: string; progress: nu
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  ObjectTable                                                               */
-/* -------------------------------------------------------------------------- */
-
+// ObjectTable
 function ObjectTable({
   bucketName,
   prefix,
@@ -253,57 +245,57 @@ function ObjectTable({
   return (
     <>
       {/* Column headers */}
-      <div className="grid grid-cols-[auto_1fr_100px_160px_140px_100px] items-center gap-4 border-border border-b px-4 py-2">
+      <div className="grid grid-cols-[auto_1fr_100px_160px_140px_100px] items-center gap-4 border-amber-200/10 border-b px-4 py-2">
         <input
           type="checkbox"
           checked={selected.size === filesCount && filesCount > 0}
           onChange={onSelectAll}
-          className="h-3.5 w-3.5 accent-accent"
+          className="h-3.5 w-3.5 accent-amber-500"
         />
         <button
           type="button"
           onClick={() => onToggleSort("name")}
-          className="flex items-center gap-1 font-mono text-[10px] text-text-muted uppercase tracking-wider hover:text-text-secondary"
+          className="flex items-center gap-1 font-mono text-[10px] text-stone-600 uppercase tracking-wider hover:text-stone-400"
         >
           Name
           {sortField === "name" && (
             <span
-              className={`text-[10px] text-accent ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
+              className={`text-[10px] text-amber-500 ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
             />
           )}
         </button>
         <button
           type="button"
           onClick={() => onToggleSort("size")}
-          className="flex items-center gap-1 font-mono text-[10px] text-text-muted uppercase tracking-wider hover:text-text-secondary"
+          className="flex items-center gap-1 font-mono text-[10px] text-stone-600 uppercase tracking-wider hover:text-stone-400"
         >
           Size
           {sortField === "size" && (
             <span
-              className={`text-[10px] text-accent ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
+              className={`text-[10px] text-amber-500 ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
             />
           )}
         </button>
         <button
           type="button"
           onClick={() => onToggleSort("lastModified")}
-          className="flex items-center gap-1 font-mono text-[10px] text-text-muted uppercase tracking-wider hover:text-text-secondary"
+          className="flex items-center gap-1 font-mono text-[10px] text-stone-600 uppercase tracking-wider hover:text-stone-400"
         >
           Modified
           {sortField === "lastModified" && (
             <span
-              className={`text-[10px] text-accent ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
+              className={`text-[10px] text-amber-500 ${sortAsc ? "icon-[lucide--chevron-up]" : "icon-[lucide--chevron-down]"}`}
             />
           )}
         </button>
-        <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+        <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
           Locations
         </span>
         <span />
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-border">
+      <div className="divide-y divide-amber-200/10">
         {/* Go up */}
         {prefix && (
           <Link
@@ -315,8 +307,8 @@ function ObjectTable({
             className="grid grid-cols-[auto_1fr_100px_160px_140px_100px] items-center gap-4 px-4 py-2.5 transition-colors hover:bg-surface"
           >
             <span className="h-3.5 w-3.5" />
-            <span className="flex items-center gap-2 font-mono text-sm text-text-secondary">
-              <span className="icon-[lucide--corner-left-up] text-sm text-text-muted" />
+            <span className="flex items-center gap-2 font-mono text-sm text-stone-400">
+              <span className="icon-[lucide--corner-left-up] text-sm text-stone-600" />
               ..
             </span>
             <span />
@@ -335,11 +327,11 @@ function ObjectTable({
           >
             <span className="h-3.5 w-3.5" />
             <span className="flex items-center gap-2 truncate font-mono text-sm">
-              <span className="icon-[lucide--folder] text-accent text-sm" />
+              <span className="icon-[lucide--folder] text-amber-500 text-sm" />
               <bdi>{displayName(folder)}</bdi>
             </span>
-            <span className="font-mono text-text-muted text-xs">-</span>
-            <span className="font-mono text-text-muted text-xs">-</span>
+            <span className="font-mono text-stone-600 text-xs">-</span>
+            <span className="font-mono text-stone-600 text-xs">-</span>
             <span />
             <span />
           </Link>
@@ -353,19 +345,19 @@ function ObjectTable({
                 type="checkbox"
                 checked={selected.has(file.name)}
                 onChange={() => onToggleSelect(file.name)}
-                className="h-3.5 w-3.5 accent-accent"
+                className="h-3.5 w-3.5 accent-amber-500"
               />
               <span className="flex items-center gap-2 truncate font-mono text-sm">
-                <span className="icon-[lucide--file] text-sm text-text-muted" />
+                <span className="icon-[lucide--file] text-sm text-stone-600" />
                 <bdi>{displayName(file.name)}</bdi>
               </span>
-              <span className="font-mono text-text-secondary text-xs">{file.size}</span>
-              <span className="font-mono text-text-muted text-xs">{file.lastModified}</span>
+              <span className="font-mono text-stone-400 text-xs">{file.size}</span>
+              <span className="font-mono text-stone-600 text-xs">{file.lastModified}</span>
               <div className="flex flex-col gap-0.5">
                 {(file.locations || []).map((loc) => (
                   <span
                     key={loc}
-                    className="w-fit rounded bg-surface-overlay px-1.5 py-0.5 font-mono text-[9px] text-text-muted leading-tight"
+                    className="w-fit rounded bg-surface-overlay px-1.5 py-0.5 font-mono text-[9px] text-stone-600 leading-tight"
                   >
                     <bdi>{safeDisplayName(loc)}</bdi>
                   </span>
@@ -377,86 +369,86 @@ function ObjectTable({
                   onClick={() => onToggleHash(file.name)}
                   className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
                     hashDetails === file.name
-                      ? "bg-accent/10 text-accent"
-                      : "text-text-muted hover:bg-surface-overlay hover:text-text-secondary"
+                      ? "bg-amber-500/10 text-amber-500"
+                      : "text-stone-600 hover:bg-surface-overlay hover:text-stone-400"
                   }`}
                   title="Checksums"
                 >
-                  <span className="icon-[lucide--hash] text-xs" />
+                  <span className="icon-[lucide--hash] block text-xs" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onDownload(file.name)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-secondary"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-surface-overlay hover:text-stone-400"
                   title="Download"
                 >
-                  <span className="icon-[lucide--download] text-xs" />
+                  <span className="icon-[lucide--download] block text-xs" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onShare(file.name)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-secondary"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-surface-overlay hover:text-stone-400"
                   title="Share"
                 >
-                  <span className="icon-[lucide--link] text-xs" />
+                  <span className="icon-[lucide--link] block text-xs" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onDeleteConfirm(file.name)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
                   title="Delete"
                 >
-                  <span className="icon-[lucide--trash-2] text-xs" />
+                  <span className="icon-[lucide--trash-2] block text-xs" />
                 </button>
               </div>
             </div>
 
             {/* Hash details */}
             {hashDetails === file.name && (
-              <div className="border-border border-t bg-surface px-4 py-3 pl-12">
+              <div className="border-amber-200/10 border-t bg-surface px-4 py-3 pl-12">
                 {checksumsLoading === file.name ? (
-                  <span className="font-mono text-[11px] text-text-muted">
+                  <span className="font-mono text-[11px] text-stone-600">
                     Computing checksums...
                   </span>
                 ) : checksums[file.name] ? (
                   <div className="grid grid-cols-[60px_1fr] gap-x-3 gap-y-1.5">
                     {file.etag && (
                       <>
-                        <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+                        <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
                           ETag
                         </span>
-                        <span className="truncate font-mono text-[11px] text-text-secondary">
+                        <span className="truncate font-mono text-[11px] text-stone-400">
                           {file.etag}
                         </span>
                       </>
                     )}
-                    <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+                    <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
                       MD5
                     </span>
-                    <span className="truncate font-mono text-[11px] text-text-secondary">
+                    <span className="truncate font-mono text-[11px] text-stone-400">
                       {checksums[file.name].md5}
                     </span>
-                    <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+                    <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
                       SHA-1
                     </span>
-                    <span className="truncate font-mono text-[11px] text-text-secondary">
+                    <span className="truncate font-mono text-[11px] text-stone-400">
                       {checksums[file.name].sha1}
                     </span>
-                    <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+                    <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
                       SHA-256
                     </span>
-                    <span className="truncate font-mono text-[11px] text-text-secondary">
+                    <span className="truncate font-mono text-[11px] text-stone-400">
                       {checksums[file.name].sha256}
                     </span>
-                    <span className="font-mono text-[10px] text-text-muted uppercase tracking-wider">
+                    <span className="font-mono text-[10px] text-stone-600 uppercase tracking-wider">
                       SHA-512
                     </span>
-                    <span className="truncate font-mono text-[11px] text-text-secondary">
+                    <span className="truncate font-mono text-[11px] text-stone-400">
                       {checksums[file.name].sha512}
                     </span>
                   </div>
                 ) : (
-                  <span className="font-mono text-[11px] text-text-muted">Loading...</span>
+                  <span className="font-mono text-[11px] text-stone-600">Loading...</span>
                 )}
               </div>
             )}
@@ -467,10 +459,7 @@ function ObjectTable({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  ShareDialog                                                               */
-/* -------------------------------------------------------------------------- */
-
+// Share Modal
 function ShareDialog({
   shareModal,
   onClose,
@@ -479,46 +468,43 @@ function ShareDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6">
+    <Dialog open onClose={onClose} className="max-w-md">
+      <div className="w-full rounded-xl border border-amber-200/5 bg-surface p-6">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-display font-semibold text-base">Share Object</h3>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-surface-overlay hover:text-text-primary"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 hover:bg-surface-overlay hover:text-stone-100"
           >
-            <span className="icon-[lucide--x] text-sm" />
+            <span className="icon-[lucide--x] block text-sm" />
           </button>
         </div>
-        <p className="mb-3 truncate font-mono text-text-muted text-xs">
+        <p className="mb-3 truncate font-mono text-stone-600 text-xs">
           <bdi>{safeDisplayName(shareModal.name)}</bdi>
         </p>
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-abyss p-3">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200/5 bg-abyss p-3">
           <input
             type="text"
             value={shareModal.url}
             readOnly
-            className="flex-1 bg-transparent font-mono text-text-secondary text-xs outline-none"
+            className="flex-1 bg-transparent font-mono text-stone-400 text-xs outline-none"
           />
           <button
             type="button"
             onClick={() => navigator.clipboard.writeText(shareModal.url)}
-            className="shrink-0 rounded-md bg-accent px-3 py-1.5 font-body font-medium text-black text-xs"
+            className="shrink-0 rounded-md bg-amber-500 px-3 py-1.5 font-body font-medium text-black text-xs"
           >
             Copy
           </button>
         </div>
-        <p className="font-body text-[11px] text-text-muted">This link expires in 5 minutes.</p>
+        <p className="font-body text-[11px] text-stone-600">This link expires in 5 minutes.</p>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  DeleteDialog                                                              */
-/* -------------------------------------------------------------------------- */
-
+// DeleteDialog
 function DeleteDialog({
   displayName,
   onConfirm,
@@ -529,13 +515,13 @@ function DeleteDialog({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-6">
+    <Dialog open onClose={onCancel} className="max-w-sm">
+      <div className="w-full rounded-xl border border-amber-200/5 bg-surface p-6">
         <div className="mb-1 flex items-center gap-2">
-          <span className="icon-[lucide--alert-triangle] text-base text-danger" />
+          <span className="icon-[lucide--alert-triangle] text-base text-red-400" />
           <h3 className="font-display font-semibold text-base">Delete Object</h3>
         </div>
-        <p className="mb-4 font-body text-sm text-text-secondary">
+        <p className="mb-4 font-body text-sm text-stone-400">
           Are you sure you want to delete{" "}
           <span className="font-mono">
             <bdi>{displayName}</bdi>
@@ -546,27 +532,24 @@ function DeleteDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 rounded-md bg-danger px-4 py-2 font-body font-medium text-sm text-white"
+            className="flex-1 rounded-md bg-red-500 px-4 py-2 font-body font-medium text-sm text-white"
           >
             Delete
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-border px-4 py-2 font-body text-sm text-text-muted"
+            className="rounded-md border border-amber-200/5 px-4 py-2 font-body text-sm text-stone-600"
           >
             Cancel
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  ObjectBrowser (orchestrator)                                              */
-/* -------------------------------------------------------------------------- */
-
+// ObjectBrowser (orchestrator)
 export function ObjectBrowser({ bucketName, prefix, folders, files }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -793,8 +776,8 @@ export function ObjectBrowser({ bucketName, prefix, folders, files }: Props) {
       }}
       onDragLeave={() => dispatch({ type: "SET_DRAGGING", dragging: false })}
       onDrop={handleDrop}
-      className={`rounded-xl border transition-colors ${
-        dragging ? "border-accent bg-accent-subtle" : "border-border bg-abyss"
+      className={`overflow-hidden rounded-xl border transition-colors ${
+        dragging ? "border-amber-500 bg-amber-500/10" : "border-amber-200/10 bg-abyss"
       }`}
     >
       {/* Toolbar */}
@@ -845,10 +828,10 @@ export function ObjectBrowser({ bucketName, prefix, folders, files }: Props) {
 
       {/* Drop overlay when dragging */}
       {dragging && (
-        <div className="flex items-center justify-center bg-accent-subtle py-8">
+        <div className="flex items-center justify-center bg-amber-500/10 py-8">
           <div className="text-center">
-            <span className="icon-[lucide--upload-cloud] mx-auto mb-2 block text-3xl text-accent" />
-            <p className="font-body text-accent text-sm">Drop files to upload</p>
+            <span className="icon-[lucide--upload-cloud] mx-auto mb-2 block text-3xl text-amber-500" />
+            <p className="font-body text-amber-500 text-sm">Drop files to upload</p>
           </div>
         </div>
       )}
@@ -857,8 +840,8 @@ export function ObjectBrowser({ bucketName, prefix, folders, files }: Props) {
       {!dragging && sortedFiles.length === 0 && filteredFolders.length === 0 && !prefix && (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <span className="icon-[lucide--upload-cloud] mx-auto mb-2 block text-2xl text-text-muted" />
-            <p className="font-body text-text-muted text-xs">
+            <span className="icon-[lucide--upload-cloud] mx-auto mb-2 block text-2xl text-stone-600" />
+            <p className="font-body text-stone-600 text-xs">
               Drag and drop files here or use the Upload button
             </p>
           </div>

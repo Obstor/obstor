@@ -28,7 +28,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,7 +36,39 @@ import (
 	jwtgo "github.com/golang-jwt/jwt/v4"
 	xjwt "github.com/obstor/obstor/cmd/jwt"
 	"github.com/obstor/obstor/pkg/hash"
+	"github.com/obstor/obstor/pkg/madmin"
 )
+
+// User-scoped usage check
+func TestScopedUsageOnlyAllowedBuckets(t *testing.T) {
+	bucketsUsage := map[string]madmin.BucketUsageInfo{
+		"bucket-a": {Size: 100, ObjectsCount: 1},
+		"bucket-b": {Size: 900, ObjectsCount: 9},
+	}
+	// Caller is allowed only bucket-a.
+	used, objects, buckets := scopedUsage(bucketsUsage, func(b string) bool { return b == "bucket-a" })
+	if used != 100 {
+		t.Fatalf("scoped usage leaked instance-wide total: got used=%d want 100", used)
+	}
+	if objects != 1 || buckets != 1 {
+		t.Fatalf("scoped usage not limited to allowed bucket: objects=%d buckets=%d want 1 and 1", objects, buckets)
+	}
+}
+
+// User-scoped disk capacity and dashboard drives totals
+func TestCanSeeInstanceTotals(t *testing.T) {
+	buckets := []BucketInfo{{Name: "bucket-a"}, {Name: "bucket-b"}}
+
+	if !canSeeInstanceTotals(buckets, func(string) bool { return true }) {
+		t.Fatal("caller allowed on all buckets must see instance totals")
+	}
+	if canSeeInstanceTotals(buckets, func(b string) bool { return b == "bucket-a" }) {
+		t.Fatal("caller denied any bucket must not see instance totals")
+	}
+	if canSeeInstanceTotals(nil, func(string) bool { return true }) {
+		t.Fatal("no buckets means nothing to total, must be false")
+	}
+}
 
 // Implement a dummy flush writer.
 type flushWriter struct {
@@ -202,6 +233,40 @@ func testStorageInfoWebHandler(obj ObjectLayer, instanceType string, t TestErrHa
 	}
 }
 
+// List servers wrapper
+func TestWebHandlerListServers(t *testing.T) {
+	ExecObjectLayerTest(t, testListServersWebHandler)
+}
+
+// testListServersWebHandler - owner must still see node topology after the callerCanSeeInstanceTotals gate.
+func testListServersWebHandler(obj ObjectLayer, instanceType string, t TestErrHandler) {
+	apiRouter := initTestWebRPCEndPoint(obj)
+	credentials := globalActiveCred
+
+	authorization, err := getWebRPCToken(apiRouter, credentials.AccessKey, credentials.SecretKey)
+	if err != nil {
+		t.Fatal("Cannot authenticate")
+	}
+
+	rec := httptest.NewRecorder()
+
+	listServersReply := &ServerListRep{}
+	req, err := newTestWebRPCRequest("web.ListServers", authorization, &ListServersArgs{})
+	if err != nil {
+		t.Fatalf("Failed to create HTTP request: <ERROR> %v", err)
+	}
+	apiRouter.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected the response status to be 200, but instead found `%d`", rec.Code)
+	}
+	if err = getTestWebRPCResponse(rec, &listServersReply); err != nil {
+		t.Fatalf("owner must see topology: %v", err)
+	}
+	if listServersReply.Total < 1 || len(listServersReply.Servers) < 1 {
+		t.Fatalf("owner must see at least the local node: total=%d servers=%d", listServersReply.Total, len(listServersReply.Servers))
+	}
+}
+
 // Wrapper for calling ServerInfo Web Handler
 func TestWebHandlerServerInfo(t *testing.T) {
 	ExecObjectLayerTest(t, testServerInfoWebHandler)
@@ -236,13 +301,6 @@ func testServerInfoWebHandler(obj ObjectLayer, instanceType string, t TestErrHan
 	}
 	if serverInfoReply.ObstorVersion != Version {
 		t.Fatalf("Cannot get obstor version from server info handler")
-	}
-	serverInfoReply.ObstorGlobalInfo["domains"] = []string(nil)
-	serverInfoReply.ObstorGlobalInfo["nodes"] = 0
-	serverInfoReply.ObstorGlobalInfo["drives"] = 0
-	globalInfo := getGlobalInfo()
-	if !reflect.DeepEqual(serverInfoReply.ObstorGlobalInfo, globalInfo) {
-		t.Fatalf("Global info did not match got %#v, expected %#v", serverInfoReply.ObstorGlobalInfo, globalInfo)
 	}
 }
 
@@ -628,7 +686,7 @@ func testRemoveObjectWebHandler(obj ObjectLayer, instanceType string, t TestErrH
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(b, []byte("Invalid arguments specified")) {
+	if !bytes.Contains(b, []byte("invalid arguments specified")) {
 		t.Fatalf("Expected response wrong %s", string(b))
 	}
 }

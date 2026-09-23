@@ -19,7 +19,7 @@
 export APT="apt --quiet -y"
 
 # remove all packages listed in remove-packages.list
-xargs --arg-file="${MINT_ROOT_DIR}/remove-packages.list" apt --quiet -y purge
+xargs --arg-file="${TESTS_ROOT_DIR}/remove-packages.list" apt --quiet -y purge
 ${APT} autoremove
 
 # flush to disk

@@ -279,7 +279,7 @@ function testListMultipartUploads($s3Client, $params) {
     $object = $params['Object'];
     $debugger = $GLOBALS['debugger'];
 
-    $data_dir = $GLOBALS['MINT_DATA_DIR'];
+    $data_dir = $GLOBALS['TESTS_DATA_DIR'];
     // Initiate multipart upload
     $result = $s3Client->createMultipartUpload([
 	'Bucket' => $bucket,
@@ -350,15 +350,15 @@ function testListMultipartUploads($s3Client, $params) {
   * @return void
   */
 function initSetup(S3Client $s3Client, $objects) {
-    $MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+    $TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
     foreach($objects as $bucket => $object) {
 	$s3Client->createBucket(['Bucket' => $bucket]);
 	$stream = NULL;
 	try {
-	    if (!file_exists($MINT_DATA_DIR . '/' . FILE_1_KB))
-		throw new Exception('File not found ' . $MINT_DATA_DIR . '/' . FILE_1_KB);
+	    if (!file_exists($TESTS_DATA_DIR . '/' . FILE_1_KB))
+		throw new Exception('File not found ' . $TESTS_DATA_DIR . '/' . FILE_1_KB);
 
-	    $stream = Psr7\Utils::streamFor(fopen($MINT_DATA_DIR . '/' . FILE_1_KB, 'r'));
+	    $stream = Psr7\Utils::streamFor(fopen($TESTS_DATA_DIR . '/' . FILE_1_KB, 'r'));
 	    $result = $s3Client->putObject([
 		'Bucket' => $bucket,
 		'Key' => $object,
@@ -398,9 +398,9 @@ function testGetPutObject($s3Client, $params) {
     $object = $params['Object'];
 
     // Upload a 10KB file
-    $MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+    $TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
     try {
-	$stream = Psr7\Utils::streamFor(fopen($MINT_DATA_DIR . '/' . FILE_1_KB, 'r'));
+	$stream = Psr7\Utils::streamFor(fopen($TESTS_DATA_DIR . '/' . FILE_1_KB, 'r'));
 	$result = $s3Client->putObject([
 	    'Bucket' => $bucket,
 	    'Key' => $object,
@@ -447,7 +447,7 @@ function testMultipartUploadFailure($s3Client, $params) {
     $bucket = $params['Bucket'];
     $object = $params['Object'];
 
-    $MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+    $TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
     // Initiate multipart upload
     $result = $s3Client->createMultipartUpload([
 	'Bucket' => $bucket,
@@ -462,7 +462,7 @@ function testMultipartUploadFailure($s3Client, $params) {
     $parts = [];
     try {
 	for ($i = 0; $i < 2; $i++) {
-	    $stream = Psr7\Utils::streamFor(fopen($MINT_DATA_DIR . '/' . FILE_5_MB, 'r'));
+	    $stream = Psr7\Utils::streamFor(fopen($TESTS_DATA_DIR . '/' . FILE_5_MB, 'r'));
 	    $limitedStream = new Psr7\LimitStream($stream, 4 * 1024 * 1024, 0);
 	    $result = $s3Client->uploadPart([
 		'Bucket' => $bucket,
@@ -532,7 +532,7 @@ function testMultipartUpload($s3Client, $params) {
     $bucket = $params['Bucket'];
     $object = $params['Object'];
 
-    $MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+    $TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
     // Initiate multipart upload
     $result = $s3Client->createMultipartUpload([
 	'Bucket' => $bucket,
@@ -547,7 +547,7 @@ function testMultipartUpload($s3Client, $params) {
     $parts = [];
     try {
 	for ($i = 0; $i < 2; $i++) {
-	    $stream = Psr7\Utils::streamFor(fopen($MINT_DATA_DIR . '/' . FILE_5_MB, 'r'));
+	    $stream = Psr7\Utils::streamFor(fopen($TESTS_DATA_DIR . '/' . FILE_5_MB, 'r'));
 	    $result = $s3Client->uploadPart([
 		'Bucket' => $bucket,
 		'Key' => $object,
@@ -602,7 +602,7 @@ function testAbortMultipartUpload($s3Client, $params) {
     $bucket = $params['Bucket'];
     $object = $params['Object'];
 
-    $MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+    $TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
     // Initiate multipart upload
     $result = $s3Client->createMultipartUpload([
 	'Bucket' => $bucket,
@@ -833,13 +833,13 @@ function testBucketPolicy($s3Client, $params) {
     runExceptionalTests($s3Client, 'getBucketPolicy', 'getStatusCode', $params);
 
     try {
-	$MINT_DATA_DIR = $GLOBALS['MINT_DATA_DIR'];
+	$TESTS_DATA_DIR = $GLOBALS['TESTS_DATA_DIR'];
 	// Create an object to test anonymous GET object
 	$object = 'test-anon';
-	if (!file_exists($MINT_DATA_DIR . '/' . FILE_1_KB))
-	    throw new Exception('File not found ' . $MINT_DATA_DIR . '/' . FILE_1_KB);
+	if (!file_exists($TESTS_DATA_DIR . '/' . FILE_1_KB))
+	    throw new Exception('File not found ' . $TESTS_DATA_DIR . '/' . FILE_1_KB);
 
-	$stream = Psr7\Utils::streamFor(fopen($MINT_DATA_DIR . '/' . FILE_1_KB, 'r'));
+	$stream = Psr7\Utils::streamFor(fopen($TESTS_DATA_DIR . '/' . FILE_1_KB, 'r'));
 	$result = $s3Client->putObject([
 		'Bucket' => $bucket,
 		'Key' => $object,
@@ -992,11 +992,11 @@ $GLOBALS['region'] = getenv("SERVER_REGION");
 $GLOBALS['secure'] = getenv("ENABLE_HTTPS");
 
 /**
- * @global string $GLOBALS['MINT_DATA_DIR']
- * @name $MINT_DATA_DIR
+ * @global string $GLOBALS['TESTS_DATA_DIR']
+ * @name $TESTS_DATA_DIR
  */
-$GLOBALS['MINT_DATA_DIR'] = '/tests/data';
-$GLOBALS['MINT_DATA_DIR'] = getenv("MINT_DATA_DIR");
+$GLOBALS['TESTS_DATA_DIR'] = '/tests/data';
+$GLOBALS['TESTS_DATA_DIR'] = getenv("TESTS_DATA_DIR");
 
 
 // Useful for debugging test failures; Set $debugmode it to true when required

@@ -6,31 +6,37 @@ import { useState } from "react";
 import { deleteBucketAction, logoutAction } from "@/lib/actions";
 import { safeDisplayName } from "@/lib/safe-name";
 import { BucketModal } from "./BucketModal";
+import { Dialog } from "./Dialog";
 
 interface Props {
   buckets: { name: string; creationDate: string }[];
   storageUsed: string;
-  _storageBytes: number;
   bucketCount: number;
   serverVersion: string;
   serverPlatform: string;
+  access: { canManage: boolean; noPolicy: number };
 }
 
 export function Sidebar({
   buckets,
   storageUsed,
-  _storageBytes,
   bucketCount,
   serverVersion,
   serverPlatform,
+  access,
 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const activeBucket = decodeURIComponent(pathname.split("/")[1] || "");
+  const firstSegment = decodeURIComponent(pathname.split("/")[1] || "");
+  const isAccess = firstSegment === "access";
+  const activeBucket = isAccess ? "" : firstSegment;
   const [filter, setFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editBucket, setEditBucket] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+
+  const attentionTitle = `${access.noPolicy} accounts with no direct policy`;
 
   const filtered = buckets.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()));
 
@@ -51,51 +57,89 @@ export function Sidebar({
   };
 
   const handleDelete = async (bucketName: string) => {
-    await deleteBucketAction(bucketName);
+    setDeleteError("");
+    const res = await deleteBucketAction(bucketName);
+    // Redirects on success, so reaching here means it failed.
+    if (res && "error" in res) {
+      setDeleteError(res.error);
+      return;
+    }
     setDeleteConfirm(null);
     router.refresh();
   };
 
   return (
     <>
-      <aside className="flex h-full w-64 shrink-0 flex-col border-border border-r bg-abyss">
+      <aside className="flex h-full w-64 shrink-0 flex-col border-amber-200/10 border-r bg-abyss">
         {/* Logo */}
         <Link
           href="/"
-          className="flex items-center gap-2.5 border-border border-b px-4 py-4 transition-colors hover:bg-surface/30"
+          className="flex items-center gap-2.5 border-amber-200/10 border-b px-4 py-4 transition-colors hover:bg-surface/30"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-            <span className="icon-[fluent-emoji-high-contrast--lobster] text-black text-lg" />
-          </div>
+          <span className="icon-[fluent-emoji-high-contrast--lobster] h-8 w-8 text-amber-500 text-lg" />
           <div>
             <p className="font-display font-semibold text-sm leading-tight">Obstor</p>
-            <p className="font-mono text-[10px] text-text-muted">{storageUsed} used</p>
+            <p className="font-mono text-[10px] text-stone-600">{storageUsed} used</p>
           </div>
         </Link>
 
         {/* Search + create */}
-        <div className="border-border border-b px-3 py-3">
+        <div className="border-amber-200/10 border-b px-3 py-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className="icon-[lucide--search] pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-muted text-xs" />
+              <span className="icon-[tabler--search] pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-stone-600 text-xs" />
               <input
                 type="text"
                 placeholder="Filter buckets..."
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                className="w-full rounded-md border border-border bg-surface py-1.5 pr-3 pl-8 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+                className="w-full rounded-md border border-amber-200/5 bg-surface py-1.5 pr-3 pl-8 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
               />
             </div>
             <button
               type="button"
               onClick={openCreate}
-              className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-black transition-colors hover:bg-accent-bright"
+              aria-label="Create bucket"
+              className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-amber-500 text-black transition-colors hover:bg-amber-400"
               title="Create bucket"
             >
-              <span className="icon-[lucide--plus] text-sm" />
+              <span className="icon-[tabler--plus] block text-sm" />
             </button>
           </div>
         </div>
+
+        {/* Access */}
+        {access.canManage && (
+          <div className="border-amber-200/10 border-b px-1.5 py-1.5">
+            <Link
+              href="/access"
+              className={`flex items-center gap-2.5 rounded-md px-3 py-2 transition-colors ${
+                isAccess ? "bg-surface" : "hover:bg-surface/50"
+              }`}
+            >
+              <span
+                className={`icon-[tabler--key] text-xs ${
+                  isAccess ? "text-amber-500" : "text-stone-600"
+                }`}
+              />
+              <span
+                className={`flex-1 font-mono text-xs ${
+                  isAccess ? "text-stone-100" : "text-stone-400"
+                }`}
+              >
+                Access
+              </span>
+              {access.noPolicy > 0 && (
+                <span
+                  title={attentionTitle}
+                  className="rounded border border-amber-200/15 px-1.5 py-0.5 font-mono text-[9px] text-stone-500"
+                >
+                  {access.noPolicy}
+                </span>
+              )}
+            </Link>
+          </div>
+        )}
 
         {/* Bucket list */}
         <nav className="flex-1 overflow-y-auto py-1">
@@ -113,13 +157,13 @@ export function Sidebar({
                   className="flex items-center gap-2.5 px-3 py-2"
                 >
                   <span
-                    className={`icon-[lucide--hard-drive] text-xs ${
-                      isActive ? "text-accent" : "text-text-muted"
+                    className={`icon-[tabler--server-2] text-xs ${
+                      isActive ? "text-amber-500" : "text-stone-600"
                     }`}
                   />
                   <span
                     className={`truncate font-mono text-xs ${
-                      isActive ? "text-text-primary" : "text-text-secondary"
+                      isActive ? "text-stone-100" : "text-stone-400"
                     }`}
                   >
                     <bdi>{safeDisplayName(b.name)}</bdi>
@@ -135,10 +179,10 @@ export function Sidebar({
                   <button
                     type="button"
                     onClick={(e) => openEdit(b.name, e)}
-                    className="flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-surface-overlay hover:text-accent"
+                    className="flex h-6 w-6 items-center justify-center rounded text-stone-600 transition-colors hover:bg-surface-overlay hover:text-amber-500"
                     title="Bucket settings"
                   >
-                    <span className="icon-[lucide--settings] text-[11px]" />
+                    <span className="icon-[tabler--settings] block text-[11px]" />
                   </button>
                   <button
                     type="button"
@@ -147,10 +191,10 @@ export function Sidebar({
                       e.stopPropagation();
                       setDeleteConfirm(b.name);
                     }}
-                    className="flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                    className="flex h-6 w-6 items-center justify-center rounded text-stone-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
                     title="Delete bucket"
                   >
-                    <span className="icon-[lucide--trash-2] text-[11px]" />
+                    <span className="icon-[tabler--trash] block text-[11px]" />
                   </button>
                 </div>
               </div>
@@ -158,28 +202,39 @@ export function Sidebar({
           })}
 
           {filtered.length === 0 && (
-            <p className="px-4 py-6 text-center font-body text-text-muted text-xs">
-              {filter ? "No matching buckets" : "No buckets yet"}
-            </p>
+            <div className="px-4 py-5">
+              <p className="font-body text-stone-600 text-xs">
+                {filter ? "No buckets match that filter." : "No buckets yet."}
+              </p>
+              {!filter && (
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  className="mt-3 font-mono text-[11px] text-amber-500 transition-colors hover:text-amber-400"
+                >
+                  Create bucket
+                </button>
+              )}
+            </div>
           )}
         </nav>
 
         {/* Footer */}
-        <div className="border-border border-t px-4 py-3">
+        <div className="border-amber-200/10 border-t px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-mono text-[10px] text-text-muted">
+              <p className="font-mono text-[10px] text-stone-600">
                 {bucketCount} bucket{bucketCount !== 1 ? "s" : ""} | v{serverVersion}
               </p>
-              <p className="font-mono text-[10px] text-text-muted">{serverPlatform}</p>
+              <p className="font-mono text-[10px] text-stone-600">{serverPlatform}</p>
             </div>
             <button
               type="button"
               onClick={() => logoutAction()}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-danger"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-surface hover:text-red-400"
               title="Sign out"
             >
-              <span className="icon-[lucide--log-out] text-xs" />
+              <span className="icon-[tabler--logout] block text-xs" />
             </button>
           </div>
         </div>
@@ -195,47 +250,53 @@ export function Sidebar({
 
       {/* Delete Confirmation */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            aria-label="Close dialog"
-            className="absolute inset-0 bg-void/80 backdrop-blur-sm"
-            onClick={() => setDeleteConfirm(null)}
-          />
-          <div className="relative w-full max-w-sm rounded-xl border border-border bg-abyss p-6 shadow-2xl shadow-black/50">
+        <Dialog
+          open
+          onClose={() => {
+            setDeleteConfirm(null);
+            setDeleteError("");
+          }}
+          className="max-w-sm"
+        >
+          <div className="w-full rounded-xl border border-amber-200/5 bg-abyss p-6 shadow-2xl shadow-black/50">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10">
-                <span className="icon-[lucide--alert-triangle] text-base text-danger" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
+                <span className="icon-[tabler--alert-triangle] text-base text-red-400" />
               </div>
               <div>
                 <h3 className="font-display font-semibold text-sm">Delete Bucket</h3>
-                <p className="font-mono text-[11px] text-text-muted">
+                <p className="font-mono text-[11px] text-stone-600">
                   <bdi>{safeDisplayName(deleteConfirm)}</bdi>
                 </p>
               </div>
             </div>
-            <p className="mb-5 font-body text-text-secondary text-xs leading-relaxed">
+            <p className="mb-5 font-body text-stone-400 text-xs leading-relaxed">
               This will permanently delete the bucket and all objects inside it. This action cannot
               be undone.
             </p>
+            {deleteError && (
+              <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 font-mono text-[11px] text-red-400">
+                Could not delete bucket: {deleteError}
+              </p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => handleDelete(deleteConfirm)}
-                className="flex-1 rounded-lg bg-danger px-4 py-2 font-body font-medium text-sm text-white transition-colors hover:bg-danger/90"
+                className="flex-1 rounded-lg bg-red-500 px-4 py-2 font-body font-medium text-sm text-white transition-colors hover:bg-red-500/90"
               >
                 Delete
               </button>
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="rounded-lg border border-border px-4 py-2 font-body text-sm text-text-muted transition-colors hover:bg-surface-overlay"
+                className="rounded-lg border border-amber-200/5 px-4 py-2 font-body text-sm text-stone-600 transition-colors hover:bg-surface-overlay"
               >
                 Cancel
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
     </>
   );

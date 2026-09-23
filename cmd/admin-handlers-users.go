@@ -1098,32 +1098,6 @@ func (a adminAPIHandlers) AccountInfoHandler(w http.ResponseWriter, r *http.Requ
 	writeSuccessResponseJSON(w, usageInfoJSON)
 }
 
-// InfoCannedPolicyV2 - GET /obstor/admin/v2/info-canned-policy?name={policyName}
-func (a adminAPIHandlers) InfoCannedPolicyV2(w http.ResponseWriter, r *http.Request) {
-	ctx := newContext(r, w, "InfoCannedPolicyV2")
-
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
-
-	objectAPI, _ := validateAdminUsersReq(ctx, w, r, iampolicy.GetPolicyAdminAction)
-	if objectAPI == nil {
-		return
-	}
-
-	policy, err := globalIAMSys.InfoPolicy(mux.Vars(r)["name"])
-	if err != nil {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
-		return
-	}
-
-	data, err := json.Marshal(policy)
-	if err != nil {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
-		return
-	}
-
-	writeSuccessResponseJSON(w, data)
-}
-
 // InfoCannedPolicy - GET /obstor/admin/v3/info-canned-policy?name={policyName}
 func (a adminAPIHandlers) InfoCannedPolicy(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "InfoCannedPolicy")
@@ -1145,40 +1119,6 @@ func (a adminAPIHandlers) InfoCannedPolicy(w http.ResponseWriter, r *http.Reques
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
 	}
-	w.(http.Flusher).Flush()
-}
-
-// ListCannedPoliciesV2 - GET /obstor/admin/v2/list-canned-policies
-func (a adminAPIHandlers) ListCannedPoliciesV2(w http.ResponseWriter, r *http.Request) {
-	ctx := newContext(r, w, "ListCannedPoliciesV2")
-
-	defer logger.AuditLog(ctx, w, r, mustGetClaimsFromToken(r))
-
-	objectAPI, _ := validateAdminUsersReq(ctx, w, r, iampolicy.ListUserPoliciesAdminAction)
-	if objectAPI == nil {
-		return
-	}
-
-	policies, err := globalIAMSys.ListPolicies()
-	if err != nil {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
-		return
-	}
-
-	policyMap := make(map[string][]byte, len(policies))
-	for k, p := range policies {
-		var err error
-		policyMap[k], err = json.Marshal(p)
-		if err != nil {
-			logger.LogIf(ctx, err)
-			continue
-		}
-	}
-	if err = json.NewEncoder(w).Encode(policyMap); err != nil {
-		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
-		return
-	}
-
 	w.(http.Flusher).Flush()
 }
 

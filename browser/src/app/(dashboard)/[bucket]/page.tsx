@@ -17,7 +17,6 @@ export default async function BucketPage({ params, searchParams }: Props) {
     name: string;
     size: number;
     lastModified: string;
-    contentType: string;
     etag: string;
   }[] = [];
   let error = "";
@@ -81,9 +80,9 @@ export default async function BucketPage({ params, searchParams }: Props) {
   return (
     <div>
       {/* Bucket info bar */}
-      <div className="mb-4 flex items-center gap-5 rounded-lg border border-border bg-abyss px-4 py-3">
+      <div className="mb-4 flex items-center gap-5 rounded-lg border border-amber-200/5 bg-abyss px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="icon-[lucide--hard-drive] text-accent text-xs" />
+          <span className="icon-[tabler--server] text-amber-500 text-xs" />
           <span className="font-display font-semibold text-sm">
             <bdi>{safeDisplayName(bucketName)}</bdi>
           </span>
@@ -91,8 +90,8 @@ export default async function BucketPage({ params, searchParams }: Props) {
 
         {creationDate && (
           <>
-            <div className="h-4 w-px bg-border" />
-            <span className="font-mono text-[11px] text-text-muted">
+            <div className="h-4 w-px bg-amber-200/10" />
+            <span className="font-mono text-[11px] text-stone-600">
               Created {formatDate(creationDate)}
             </span>
           </>
@@ -100,10 +99,12 @@ export default async function BucketPage({ params, searchParams }: Props) {
 
         {/* Visibility + URL - right aligned */}
         <div className="ml-auto flex items-center gap-2">
-          <span className={`h-1.5 w-1.5 rounded-full ${isPublic ? "bg-up" : "bg-text-muted"}`} />
-          <span className="font-mono text-[11px] text-text-secondary">{policyLabel}</span>
-          <span className="text-text-muted">|</span>
-          <span className="font-mono text-[11px] text-text-muted">{httpUrl}</span>
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${isPublic ? "bg-green-500" : "bg-stone-600"}`}
+          />
+          <span className="font-mono text-[11px] text-stone-400">{policyLabel}</span>
+          <span className="text-stone-600">|</span>
+          <span className="font-mono text-[11px] text-stone-600">{httpUrl}</span>
         </div>
       </div>
 
@@ -112,7 +113,7 @@ export default async function BucketPage({ params, searchParams }: Props) {
         <div className="mb-4 flex items-center gap-2">
           <Link
             href={`/${encodeURIComponent(bucketName)}`}
-            className="font-mono text-accent text-sm transition-colors hover:text-accent-bright"
+            className="font-mono text-amber-500 text-sm transition-colors hover:text-amber-400"
           >
             <bdi>{safeDisplayName(bucketName)}</bdi>
           </Link>
@@ -123,10 +124,10 @@ export default async function BucketPage({ params, searchParams }: Props) {
               const path = `${arr.slice(0, i + 1).join("/")}/`;
               return (
                 <span key={path} className="flex items-center gap-2">
-                  <span className="text-text-muted">/</span>
+                  <span className="text-stone-600">/</span>
                   <Link
                     href={`/${encodeURIComponent(bucketName)}?prefix=${encodeURIComponent(path)}`}
-                    className="font-mono text-sm text-text-secondary transition-colors hover:text-text-primary"
+                    className="font-mono text-sm text-stone-400 transition-colors hover:text-stone-100"
                   >
                     <bdi>{safeDisplayName(part)}</bdi>
                   </Link>
@@ -137,9 +138,9 @@ export default async function BucketPage({ params, searchParams }: Props) {
       )}
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-danger/20 bg-danger/5 px-4 py-3">
-          <span className="icon-[lucide--alert-circle] text-danger text-sm" />
-          <span className="font-body text-danger text-sm">{error}</span>
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
+          <span className="icon-[tabler--alert-circle] text-red-400 text-sm" />
+          <span className="font-body text-red-400 text-sm">{error}</span>
         </div>
       ) : (
         <ObjectBrowser
@@ -151,7 +152,6 @@ export default async function BucketPage({ params, searchParams }: Props) {
             size: humanSize(f.size),
             sizeBytes: f.size,
             lastModified: formatDate(f.lastModified),
-            contentType: f.contentType || "",
             etag: f.etag || "",
             locations: objectLocations[f.name] || [],
           }))}

@@ -3,12 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { rpc } from "./rpc";
+import { buildAccessIndex, policyExclusiveTo, policyGrants } from "./access-index";
+import { listBuckets, rpc } from "./rpc";
+import { RESERVED_BUCKET_NAMES } from "./safe-name";
 
 // Types
 export interface NamedPolicy {
   name: string;
   policy: string;
+}
+
+// New means staged, exclusive is one bucket, shared is multiple buckets
+export type PolicyOrigin = "new" | "exclusive" | "shared";
+
+export interface PolicyRow extends NamedPolicy {
+  origin: PolicyOrigin;
 }
 
 export interface IAMUser {
@@ -31,8 +40,15 @@ export interface BucketSettings {
   encryptionType: "SSE-S3" | "SSE-KMS";
   kmsKeyId: string;
   tags: { key: string; value: string }[];
-  policies: NamedPolicy[];
+  policies: PolicyRow[];
   users: IAMUser[];
+  // Staged removals
+  removedPolicies: string[];
+  detachedUsers: string[];
+  // Read-only context for access tab
+  catchAllPolicies: string[];
+  attachablePolicies: PolicyRow[];
+  attachableUsers: IAMUser[];
   sftpEnabled: boolean;
   s3Enabled: boolean;
   placementStrategy: "smart" | "custom";
@@ -84,87 +100,14 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-export async function changePasswordAction(formData: FormData) {
-  const currentAccessKey = formData.get("currentAccessKey") as string;
-  const currentSecretKey = formData.get("currentSecretKey") as string;
-  const newAccessKey = formData.get("newAccessKey") as string;
-  const newSecretKey = formData.get("newSecretKey") as string;
-
-  try {
-    await rpc("SetAuth", { currentAccessKey, currentSecretKey, newAccessKey, newSecretKey });
-    return { success: true };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to change password" };
-  }
-}
-
 // Buckets CRUD
-export async function createBucketAction(formData: FormData) {
-  const bucketName = formData.get("bucketName") as string;
-  try {
-    await rpc("MakeBucket", { bucketName });
-    return { success: true, bucketName };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to create bucket" };
-  }
-}
-
 export async function deleteBucketAction(bucketName: string) {
   try {
-    // Delete user if it doesn't have policies attached
-    const users = await listUsers(bucketName);
-    const allPolicies = await listPolicies();
-    const bucketScoped = new Set(
-      allPolicies.filter((p) => policyTargetsBucket(p.policy, bucketName)).map((p) => p.name),
-    );
-
-    for (const user of users) {
-      const remaining = user.policies.filter((pn) => !bucketScoped.has(pn));
-      if (remaining.length === 0) {
-        await rpc("RemoveIAMUser", { accessKey: user.accessKey });
-      } else {
-        await rpc("SetIAMUserPolicy", {
-          accessKey: user.accessKey,
-          policies: remaining.join(","),
-        });
-      }
-    }
-
-    // Delete bucket-scoped policies
-    for (const pName of bucketScoped) {
-      try {
-        await rpc("DeleteCannedPolicy", { name: pName });
-      } catch {
-        // Todo: Add error handling
-      }
-    }
-
     await rpc("DeleteBucket", { bucketName });
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to delete bucket" };
   }
   redirect("/");
-}
-
-function policyTargetsBucket(policyJSON: string, bucket: string): boolean {
-  try {
-    const parsed = JSON.parse(policyJSON);
-    const arnPrefix = `arn:aws:s3:::${bucket}`;
-    const statements = Array.isArray(parsed.Statement) ? parsed.Statement : [parsed.Statement];
-    for (const st of statements) {
-      if (!st) continue;
-      const resources = Array.isArray(st.Resource) ? st.Resource : [st.Resource];
-      for (const r of resources) {
-        if (typeof r !== "string") continue;
-        if (r === arnPrefix || r.startsWith(`${arnPrefix}/`) || r.startsWith(`${arnPrefix}*`)) {
-          return true;
-        }
-      }
-    }
-  } catch {
-    // Todo: Add error handling
-  }
-  return false;
 }
 
 // Bucket Settings
@@ -196,8 +139,22 @@ export async function getBucketSettingsAction(
       // Todo: Add error handling
     }
 
-    const policies = await listPolicies(bucketName);
-    const users = await listUsers(bucketName);
+    // Bucket filters
+    const snap = await getAccessSnapshotAction();
+    const idx = buildAccessIndex(snap.buckets, snap.policies, snap.users);
+
+    const rows: PolicyRow[] = idx.policies
+      .filter((p) => policyGrants(p, bucketName) && !p.catchAll && !p.adminOnly)
+      .map((p) => ({
+        name: p.name,
+        policy: p.policy,
+        origin: policyExclusiveTo(p, bucketName) ? "exclusive" : "shared",
+      }));
+    const manageable = new Set(rows.map((r) => r.name));
+    const users: IAMUser[] = idx.users
+      .filter((u) => u.policies.some((pn) => manageable.has(pn)))
+      .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies }));
+    const shownUsers = new Set(users.map((u) => u.accessKey));
 
     let s3Enabled = true;
     let sftpEnabled = true;
@@ -224,8 +181,21 @@ export async function getBucketSettingsAction(
       encryptionType: "SSE-S3",
       kmsKeyId: "",
       tags: [],
-      policies,
+      policies: rows,
       users,
+      removedPolicies: [],
+      detachedUsers: [],
+      catchAllPolicies: idx.policies.filter((p) => p.catchAll).map((p) => p.name),
+      attachablePolicies: idx.policies
+        .filter((p) => !manageable.has(p.name) && !p.catchAll && !p.adminOnly && !p.parseError)
+        .map((p) => ({
+          name: p.name,
+          policy: p.policy,
+          origin: "shared" as const,
+        })),
+      attachableUsers: idx.users
+        .filter((u) => !shownUsers.has(u.accessKey))
+        .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies })),
       sftpEnabled,
       s3Enabled,
       placementStrategy: "smart",
@@ -241,9 +211,12 @@ export async function getBucketSettingsAction(
 export async function createBucketWithSettingsAction(
   settings: BucketSettings,
 ): Promise<{ success: true; bucketName: string } | { error: string }> {
+  if (RESERVED_BUCKET_NAMES.has(settings.name)) {
+    return { error: `${settings.name} is reserved by the console. Pick another name.` };
+  }
   try {
     await rpc("MakeBucket", { bucketName: settings.name });
-    await applyBucketSettings(settings, true);
+    await applyBucketSettings(settings);
     revalidatePath("/");
     revalidatePath(`/${settings.name}`);
     return { success: true, bucketName: settings.name };
@@ -258,7 +231,7 @@ export async function updateBucketSettingsAction(
   settings: BucketSettings,
 ): Promise<{ success: true } | { error: string }> {
   try {
-    await applyBucketSettings(settings, false);
+    await applyBucketSettings(settings);
     revalidatePath("/");
     revalidatePath(`/${settings.name}`);
     return { success: true };
@@ -269,7 +242,7 @@ export async function updateBucketSettingsAction(
   }
 }
 
-async function applyBucketSettings(settings: BucketSettings, _isCreate: boolean) {
+async function applyBucketSettings(settings: BucketSettings) {
   await rpc("SetBucketPolicy", {
     bucketName: settings.name,
     prefix: "",
@@ -284,22 +257,39 @@ async function applyBucketSettings(settings: BucketSettings, _isCreate: boolean)
   });
 
   // List IAM policies
-  const existing = await listPolicies(settings.name);
-  const desiredNames = new Set(settings.policies.map((p) => p.name));
-  for (const ex of existing) {
-    if (!desiredNames.has(ex.name)) {
-      try {
-        await rpc("DeleteCannedPolicy", { name: ex.name });
-      } catch {
-        // Todo: Add error handling
-      }
+  const resolveName = (n: string) => n.split("BUCKET_NAME").join(settings.name);
+
+  const [allPolicies, allUsers] = await Promise.all([listPolicies(), listUsers()]);
+  const policyNames = new Set(allPolicies.map((p) => p.name));
+  const userKeys = new Set(allUsers.map((u) => u.accessKey));
+  const heldBy = new Map(allUsers.map((u) => [u.accessKey, u.policies]));
+
+  for (const p of settings.policies) {
+    if (p.origin === "shared") continue;
+    const name = resolveName(p.name);
+    if (!name.trim()) throw new Error("Every policy needs a name.");
+    try {
+      JSON.parse(p.policy.split("BUCKET_NAME").join(settings.name));
+    } catch {
+      throw new Error(`Policy ${name} is not valid JSON.`);
+    }
+    if (p.origin === "new" && policyNames.has(name)) {
+      throw new Error(
+        `A policy named ${name} already exists. Rename this one, or use Attach existing policy.`,
+      );
+    }
+  }
+  for (const u of settings.users) {
+    if (u.pendingSecretKey && userKeys.has(u.accessKey)) {
+      throw new Error(`Access key ${u.accessKey} already exists. Use Attach existing user.`);
     }
   }
   for (const p of settings.policies) {
-    if (!p.name.trim() || !p.policy.trim()) continue;
-    // Use BUCKET_NAME for policy placeholder
-    const resolved = p.policy.split("BUCKET_NAME").join(settings.name);
-    await rpc("SetCannedPolicy", { name: p.name, policy: resolved });
+    if (p.origin === "shared") continue;
+    await rpc("SetCannedPolicy", {
+      name: resolveName(p.name),
+      policy: p.policy.split("BUCKET_NAME").join(settings.name),
+    });
   }
 
   // Create users that were added on bucket modal
@@ -313,40 +303,41 @@ async function applyBucketSettings(settings: BucketSettings, _isCreate: boolean)
   }
 
   // Attach policies
-  const allGlobal = await listPolicies();
-  const bucketScoped = new Set(
-    allGlobal.filter((p) => policyTargetsBucket(p.policy, settings.name)).map((p) => p.name),
-  );
+  const modalManaged = new Set<string>([
+    ...settings.policies.map((p) => (p.origin === "shared" ? p.name : resolveName(p.name))),
+    ...settings.removedPolicies,
+  ]);
+  const known = new Set<string>([
+    ...policyNames,
+    ...settings.policies.map((p) => resolveName(p.name)),
+  ]);
 
-  for (const user of settings.users) {
-    let current: IAMUser | undefined;
-    try {
-      const fresh = await listUsersAll();
-      current = fresh.find((u) => u.accessKey === user.accessKey);
-    } catch {
-      // Todo: Add error handling
-    }
-    const others = current ? current.policies.filter((pn) => !bucketScoped.has(pn)) : [];
-    const finalPolicies = Array.from(new Set([...others, ...user.policies]));
-    await rpc("SetIAMUserPolicy", {
-      accessKey: user.accessKey,
-      policies: finalPolicies.join(","),
-    });
+  const targets = [
+    ...settings.users.map((u) => ({
+      accessKey: u.accessKey,
+      checked: u.policies.map(resolveName),
+    })),
+    ...settings.detachedUsers.map((accessKey) => ({ accessKey, checked: [] as string[] })),
+  ];
+
+  for (const t of targets) {
+    const held = heldBy.get(t.accessKey) ?? [];
+    // Keep what this modal did not manage
+    const keep = held.filter((pn) => !modalManaged.has(pn) && known.has(pn));
+    const final = Array.from(new Set([...keep, ...t.checked]));
+    if (final.length === held.length && final.every((pn) => held.includes(pn))) continue;
+    await rpc("SetIAMUserPolicy", { accessKey: t.accessKey, policies: final.join(",") });
   }
 }
 
 // List IAM canned policies
-async function listPolicies(bucketName = ""): Promise<NamedPolicy[]> {
+async function listPolicies(): Promise<NamedPolicy[]> {
   try {
-    const res = await rpc<{ policies?: NamedPolicy[] }>("ListCannedPolicies", { bucketName });
+    const res = await rpc<{ policies?: NamedPolicy[] }>("ListCannedPolicies", {});
     return res.policies || [];
-  } catch {
-    return [];
+  } catch (err) {
+    throw err instanceof Error ? err : new Error("Failed to list policies");
   }
-}
-
-export async function listPoliciesAction(bucketName: string): Promise<NamedPolicy[]> {
-  return listPolicies(bucketName);
 }
 
 export async function savePolicyAction(name: string, policyJSON: string) {
@@ -368,21 +359,13 @@ export async function deletePolicyAction(name: string) {
 }
 
 // List IAM users
-async function listUsers(bucketName = ""): Promise<IAMUser[]> {
+async function listUsers(): Promise<IAMUser[]> {
   try {
-    const res = await rpc<{ users?: IAMUser[] }>("ListIAMUsers", { bucketName });
+    const res = await rpc<{ users?: IAMUser[] }>("ListIAMUsers", {});
     return (res.users || []).map((u) => ({ ...u, policies: u.policies ?? [] }));
-  } catch {
-    return [];
+  } catch (err) {
+    throw err instanceof Error ? err : new Error("Failed to list users");
   }
-}
-
-async function listUsersAll(): Promise<IAMUser[]> {
-  return listUsers("");
-}
-
-export async function listUsersAction(bucketName: string): Promise<IAMUser[]> {
-  return listUsers(bucketName);
 }
 
 export async function addUserAction(
@@ -402,7 +385,7 @@ export async function addUserAction(
   }
 }
 
-export async function removeUserAction(accessKey: string) {
+export async function deleteUserAction(accessKey: string) {
   try {
     await rpc("RemoveIAMUser", { accessKey });
     return { success: true };
@@ -417,44 +400,6 @@ export async function setUserStatusAction(accessKey: string, enabled: boolean) {
     return { success: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to set user status" };
-  }
-}
-
-export async function setUserPolicyAction(accessKey: string, policiesCSV: string) {
-  try {
-    await rpc("SetIAMUserPolicy", { accessKey, policies: policiesCSV });
-    return { success: true };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to attach policy" };
-  }
-}
-
-// Detach bucket access for user
-export async function detachUserFromBucketAction(
-  bucketName: string,
-  accessKey: string,
-): Promise<{ deleted: boolean } | { error: string }> {
-  try {
-    const all = await listPolicies();
-    const bucketScoped = new Set(
-      all.filter((p) => policyTargetsBucket(p.policy, bucketName)).map((p) => p.name),
-    );
-    const users = await listUsers();
-    const user = users.find((u) => u.accessKey === accessKey);
-    if (!user) return { error: "User not found" };
-
-    const remaining = user.policies.filter((pn) => !bucketScoped.has(pn));
-    if (remaining.length === 0) {
-      await rpc("RemoveIAMUser", { accessKey });
-      return { deleted: true };
-    }
-    await rpc("SetIAMUserPolicy", {
-      accessKey,
-      policies: remaining.join(","),
-    });
-    return { deleted: false };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to detach user" };
   }
 }
 
@@ -519,5 +464,104 @@ export async function getDownloadURL(bucketName: string, objectName: string) {
     return { url: result.url };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to get download URL" };
+  }
+}
+
+// Access page
+export interface AccessSnapshot {
+  buckets: string[];
+  policies: NamedPolicy[];
+  users: IAMUser[];
+  policiesError?: string;
+  usersError?: string;
+}
+
+const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+
+// Partial failure is reported per list
+export async function getAccessSnapshotAction(): Promise<AccessSnapshot> {
+  const [b, p, u] = await Promise.allSettled([listBuckets(), listPolicies(), listUsers()]);
+  return {
+    buckets: b.status === "fulfilled" ? b.value.map((x) => x.name) : [],
+    policies: p.status === "fulfilled" ? p.value : [],
+    users: u.status === "fulfilled" ? u.value : [],
+    policiesError: p.status === "rejected" ? msg(p.reason, "Failed to list policies") : undefined,
+    usersError: u.status === "rejected" ? msg(u.reason, "Failed to list users") : undefined,
+  };
+}
+
+// One listing, which doubles as the capability probe
+export async function getAccessBadgeAction(): Promise<{ canManage: boolean; noPolicy: number }> {
+  try {
+    const users = await listUsers();
+    return { canManage: true, noPolicy: users.filter((u) => u.policies.length === 0).length };
+  } catch {
+    return { canManage: false, noPolicy: 0 };
+  }
+}
+
+export async function setUserPoliciesAction(accessKey: string, policies: string[]) {
+  try {
+    await rpc("SetIAMUserPolicy", { accessKey, policies: policies.join(",") });
+    revalidatePath("/access");
+    return { success: true as const };
+  } catch (err) {
+    return { error: msg(err, "Failed to update policies") };
+  }
+}
+
+// Composed from three RPCs because the server has no rename verb
+export async function renamePolicyAction(oldName: string, newName: string, policyJSON: string) {
+  if (!newName.trim()) return { error: "The new name cannot be empty." };
+  if (oldName === newName) return { error: "That is already the policy name." };
+  try {
+    const existing = await listPolicies();
+    if (existing.some((p) => p.name === newName)) {
+      return { error: `A policy named ${newName} already exists.` };
+    }
+    await rpc("SetCannedPolicy", { name: newName, policy: policyJSON });
+
+    const holders = (await listUsers()).filter((u) => u.policies.includes(oldName));
+    const stuck: string[] = [];
+    for (const u of holders) {
+      const next = u.policies.map((pn) => (pn === oldName ? newName : pn));
+      try {
+        await rpc("SetIAMUserPolicy", { accessKey: u.accessKey, policies: next.join(",") });
+      } catch {
+        stuck.push(u.accessKey);
+      }
+    }
+    if (stuck.length > 0) {
+      return {
+        error: `Renamed to ${newName} but ${stuck.length} of ${holders.length} holders were not moved. Both names exist. Retry from this dialog.`,
+      };
+    }
+
+    await rpc("DeleteCannedPolicy", { name: oldName });
+    revalidatePath("/access");
+    return { success: true as const };
+  } catch (err) {
+    return { error: msg(err, "Failed to rename policy") };
+  }
+}
+
+// AddIAMUser on an existing access key replaces the secret
+export async function rotateSecretAction(
+  accessKey: string,
+  wasDisabled: boolean,
+): Promise<{ secretKey: string } | { error: string }> {
+  try {
+    const res = await rpc<{ accessKey: string; secretKey: string }>("AddIAMUser", {
+      accessKey,
+      secretKey: "",
+      policy: "",
+    });
+    if (wasDisabled) {
+      await rpc("SetIAMUserStatus", { accessKey, enabled: false });
+    }
+    revalidatePath("/access");
+    return { secretKey: res.secretKey };
+  } catch (err) {
+    return { error: msg(err, "Failed to rotate secret key") };
   }
 }

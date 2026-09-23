@@ -28,7 +28,7 @@ obstor backend nas /shared/nasvol
 
 Obstor Backend comes with an embedded web based object browser. Point your web browser to http://127.0.0.1:9000 to ensure that your server has started successfully.
 
-![Screenshot](https://raw.githubusercontent.com/obstor/obstor/main/docs/screenshots/dashboard.png)
+![Screenshot](../screenshots/dashboard.svg)
 
 ## Test using an S3 client
 

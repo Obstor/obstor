@@ -23,11 +23,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/obstor/obstor/cmd/logger"
 	iampolicy "github.com/obstor/obstor/pkg/iam/policy"
 	"github.com/obstor/obstor/pkg/madmin"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -189,7 +187,7 @@ func healingMetricsPrometheus(ch chan<- prometheus.Metric) {
 // Collects backend specific metrics for Obstor instance in Prometheus specific format
 // and sends to given channel
 func backendMetricsPrometheus(ch chan<- prometheus.Metric) {
-	if !globalIsBackend || (globalBackendName != S3Backend && globalBackendName != AzureBackend && globalBackendName != GCSBackend) {
+	if !globalIsBackend || globalBackendName != S3Backend {
 		return
 	}
 
@@ -720,34 +718,6 @@ func storageMetricsPrometheus(ch chan<- prometheus.Metric) {
 			disk.DrivePath,
 		)
 	}
-}
-
-func metricsHandler() http.Handler {
-
-	registry := prometheus.NewRegistry()
-
-	err := registry.Register(obstorVersionInfo)
-	logger.LogIf(GlobalContext, err)
-
-	err = registry.Register(httpRequestsDuration)
-	logger.LogIf(GlobalContext, err)
-
-	err = registry.Register(newObstorCollector())
-	logger.LogIf(GlobalContext, err)
-
-	gatherers := prometheus.Gatherers{
-		prometheus.DefaultGatherer,
-		registry,
-	}
-	// Delegate http serving to Prometheus client library, which will call collector.Collect.
-	return promhttp.InstrumentMetricHandler(
-		registry,
-		promhttp.HandlerFor(gatherers,
-			promhttp.HandlerOpts{
-				ErrorHandling: promhttp.ContinueOnError,
-			}),
-	)
-
 }
 
 // AuthMiddleware checks if the bearer token is valid and authorized.

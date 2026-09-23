@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-source "${MINT_ROOT_DIR}"/source.sh
+source "${TESTS_ROOT_DIR}"/source.sh
 
 # install nodejs source list
 if ! $WGET --output-document=- https://deb.nodesource.com/setup_24.x | bash -; then
@@ -39,7 +39,7 @@ if ! $WGET --output-document=- "$download_url" | tar -C "${GO_INSTALL_PATH}" -zx
 	exit 1
 fi
 
-xargs --arg-file="${MINT_ROOT_DIR}/install-packages.list" apt --quiet -y install
+xargs --arg-file="${TESTS_ROOT_DIR}/install-packages.list" apt --quiet -y install
 
 # set python 3.12 as default (Ubuntu 24.04)
 update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1

@@ -16,5 +16,5 @@
 #  limitations under the License.
 #
 
-test_run_dir="$MINT_RUN_CORE_DIR/aws-sdk-go-v2"
+test_run_dir="$TESTS_RUN_CORE_DIR/aws-sdk-go-v2"
 (cd "$test_run_dir" && CGO_ENABLED=0 go build --ldflags "-s -w")

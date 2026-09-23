@@ -233,7 +233,6 @@ func guessIsMetricsReq(req *http.Request) bool {
 	}
 	aType := getRequestAuthType(req)
 	return (aType == authTypeAnonymous || aType == authTypeJWT) &&
-		req.URL.Path == obstorReservedBucketPath+prometheusMetricsPathLegacy ||
 		req.URL.Path == obstorReservedBucketPath+prometheusMetricsV2ClusterPath ||
 		req.URL.Path == obstorReservedBucketPath+prometheusMetricsV2NodePath
 }

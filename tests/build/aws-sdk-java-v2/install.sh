@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-test_run_dir="$MINT_RUN_CORE_DIR/aws-sdk-java-v2"
+test_run_dir="$TESTS_RUN_CORE_DIR/aws-sdk-java-v2"
 
 cd "$(dirname "$(realpath "$0")")"
 

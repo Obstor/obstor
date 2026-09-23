@@ -18,9 +18,9 @@
 
 # shellcheck disable=SC2317
 
-if [ -n "$MINT_MODE" ]; then
-	if [ -z "${MINT_DATA_DIR+x}" ]; then
-		echo "MINT_DATA_DIR not defined"
+if [ -n "$TESTS_MODE" ]; then
+	if [ -z "${TESTS_DATA_DIR+x}" ]; then
+		echo "TESTS_DATA_DIR not defined"
 		exit 1
 	fi
 	if [ -z "${SERVER_ENDPOINT+x}" ]; then
@@ -46,8 +46,8 @@ if [ -z "${SERVER_ENDPOINT+x}" ]; then
 fi
 
 WORK_DIR="$PWD"
-DATA_DIR="$MINT_DATA_DIR"
-if [ -z "$MINT_MODE" ]; then
+DATA_DIR="$TESTS_DATA_DIR"
+if [ -z "$TESTS_MODE" ]; then
 	WORK_DIR="$PWD/.run-$RANDOM"
 	DATA_DIR="$WORK_DIR/data"
 fi
@@ -84,13 +84,13 @@ function get_duration() {
 }
 
 function log_success() {
-	if [ -n "$MINT_MODE" ]; then
+	if [ -n "$TESTS_MODE" ]; then
 		printf '{"name": "s3cmd", "duration": "%d", "function": "%s", "status": "PASS"}\n' "$(get_duration "$1")" "$2"
 	fi
 }
 
 function show() {
-	if [ -z "$MINT_MODE" ]; then
+	if [ -z "$TESTS_MODE" ]; then
 		func_name="$1"
 		echo "Running $func_name()"
 	fi
@@ -118,7 +118,7 @@ function assert() {
 	err=$("$@" 2>&1)
 	rv=$?
 	if [ "$rv" -ne 0 ] && [ "$expected_rv" -eq 0 ]; then
-		if [ -n "$MINT_MODE" ]; then
+		if [ -n "$TESTS_MODE" ]; then
 			err=$(printf '%s' "$err" | python -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
 			## err is already JSON string, no need to double quote
 			printf '{"name": "s3cmd", "duration": "%d", "function": "%s", "status": "FAIL", "error": %s}\n' "$(get_duration "$start_time")" "$func_name" "$err"
@@ -322,8 +322,8 @@ access_key = $ACCESS_KEY
 secret_key = $SECRET_KEY
 EOF
 
-	# For Mint, setup is already done.  For others, setup the environment
-	if [ -z "$MINT_MODE" ]; then
+	# For tests, setup is already done.  For others, setup the environment
+	if [ -z "$TESTS_MODE" ]; then
 		mkdir -p "$WORK_DIR"
 		mkdir -p "$DATA_DIR"
 
@@ -374,7 +374,7 @@ function main() {
 	rv=$?
 
 	rm -fr "$S3CMD_CONFIG_FILE"
-	if [ -z "$MINT_MODE" ]; then
+	if [ -z "$TESTS_MODE" ]; then
 		rm -fr "$WORK_DIR" "$DATA_DIR"
 	fi
 

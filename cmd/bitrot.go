@@ -25,7 +25,7 @@ import (
 	"hash"
 	"io"
 
-	"github.com/obstor/highwayhash"
+	"github.com/minio/highwayhash"
 	"github.com/obstor/obstor/cmd/logger"
 	"golang.org/x/crypto/blake2b"
 )
@@ -58,6 +58,17 @@ func (a BitrotAlgorithm) New() hash.Hash {
 		logger.CriticalIf(GlobalContext, errors.New("unsupported bitrot algorithm"))
 		return nil
 	}
+}
+
+// Return digest size without allocating a hash state
+func (a BitrotAlgorithm) Size() int {
+	switch a {
+	case SHA256, HighwayHash256, HighwayHash256S:
+		return 32
+	case BLAKE2b512:
+		return 64
+	}
+	return 0
 }
 
 // Available reports whether the given algorithm is available.
@@ -148,7 +159,7 @@ func bitrotShardFileSize(size int64, shardSize int64, algo BitrotAlgorithm) int6
 	if algo != HighwayHash256S {
 		return size
 	}
-	return ceilFrac(size, shardSize)*int64(algo.New().Size()) + size
+	return ceilFrac(size, shardSize)*int64(algo.Size()) + size
 }
 
 // bitrotVerify a single stream of data.

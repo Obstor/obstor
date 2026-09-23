@@ -338,7 +338,7 @@ func downloadReleaseURL(u *url.URL, timeout time.Duration, mode string) (content
 		if resp.StatusCode != http.StatusOK {
 			return content, AdminError{
 				Code:       AdminUpdateUnexpectedFailure,
-				Message:    fmt.Sprintf("Error downloading URL %s. Response: %v", u, resp.Status),
+				Message:    fmt.Sprintf("error downloading URL %s. Response: %v", u, resp.Status),
 				StatusCode: resp.StatusCode,
 			}
 		}

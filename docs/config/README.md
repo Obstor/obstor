@@ -2,9 +2,7 @@
 
 ## Configuration Directory
 
-You can specify the location of your existing config using `--config-dir`, Obstor will migrate the `config.json` to your backend storage. Your current `config.json` will be renamed upon successful migration as `config.json.deprecated` in your current `--config-dir`. All your existing configurations are honored after this migration.
-
-Additionally `--config-dir` is now a legacy option which will is scheduled for removal in future, so please update your local startup, ansible scripts accordingly.
+Configuration is stored in the backend under `.obstor.sys/config/`; there is no local config directory.
 
 ```bash
 obstor server /data

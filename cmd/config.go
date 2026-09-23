@@ -206,12 +206,6 @@ func initConfig(objAPI ObjectLayer) error {
 		return errServerNotInitialized
 	}
 
-	if isFile(getConfigFile()) {
-		if err := migrateConfig(); err != nil {
-			return err
-		}
-	}
-
 	// Migrates ${HOME}/.obstor/config.json or config.json.deprecated
 	// to '<export_path>/.obstor.sys/config/config.json'
 	// ignore if the file doesn't exist.

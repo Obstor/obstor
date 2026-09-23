@@ -975,6 +975,8 @@ func safeDisplayName(name string) string {
 		switch {
 		case r <= 0x001f: // C0 controls
 			return -1
+		case r == 0x0022 || r == 0x005c: // " and \ : Content-Disposition quoted-string delimiters
+			return -1
 		case r >= 0x007f && r <= 0x009f: // DEL and C1 controls
 			return -1
 		case r == 0x061c: // ALM (Arabic letter mark)

@@ -31,10 +31,12 @@ import (
 // position will cause the line number to change and the test to FAIL
 // Tests getSource().
 func TestGetSource(t *testing.T) {
+	lockSourceTrace.Store(true)
+	defer lockSourceTrace.Store(false)
 	currentSource := func() string { return getSource(2) }
 	gotSource := currentSource()
-	// Hard coded line number, 35, in the "expectedSource" value
-	expectedSource := "[namespace-lock_test.go:35:TestGetSource()]"
+	// Hard coded line number, 37, in the "expectedSource" value
+	expectedSource := "[namespace-lock_test.go:37:TestGetSource()]"
 	if gotSource != expectedSource {
 		t.Errorf("expected : %s, got : %s", expectedSource, gotSource)
 	}

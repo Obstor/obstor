@@ -18,6 +18,7 @@
 package policy
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 
@@ -141,7 +142,9 @@ func (statement *Statement) UnmarshalJSON(data []byte) error {
 	type subStatement Statement
 	var ss subStatement
 
-	if err := json.Unmarshal(data, &ss); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&ss); err != nil {
 		return err
 	}
 

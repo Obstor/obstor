@@ -21,10 +21,50 @@ import (
 	"encoding/json"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/obstor/obstor/pkg/bucket/policy/condition"
 )
+
+func TestParseConfigRejectsUnknownFields(t *testing.T) {
+	data := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"NotResource":["arn:aws:s3:::secret/*"],"Resource":["arn:aws:s3:::mybucket/*"]}]}`
+	if _, err := ParseConfig(strings.NewReader(data), "mybucket"); err == nil {
+		t.Fatal("ParseConfig accepted unknown/negated field (NotResource): over-permissive policy stored")
+	}
+}
+
+func TestDropDuplicateStatementsKeepsDeny(t *testing.T) {
+	allow := NewStatement(
+		Allow,
+		NewPrincipal("*"),
+		NewActionSet(GetObjectAction),
+		NewResourceSet(NewResource("mybucket", "/*")),
+		condition.NewFunctions(),
+	)
+	deny := NewStatement(
+		Deny,
+		NewPrincipal("*"),
+		NewActionSet(GetObjectAction),
+		NewResourceSet(NewResource("mybucket", "/secret/*")),
+		condition.NewFunctions(),
+	)
+	p := Policy{
+		Version:    DefaultVersion,
+		Statements: []Statement{allow, deny, allow},
+	}
+	p.dropDuplicateStatements()
+
+	denyCount := 0
+	for _, st := range p.Statements {
+		if st.Effect == Deny {
+			denyCount++
+		}
+	}
+	if denyCount != 1 {
+		t.Fatalf("dedup dropped Deny guardrail: got %d Deny in %d statements, want 1", denyCount, len(p.Statements))
+	}
+}
 
 func TestPolicyIsAllowed(t *testing.T) {
 	case1Policy := Policy{

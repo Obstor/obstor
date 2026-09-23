@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-test_run_dir="$MINT_RUN_CORE_DIR/versioning"
-test_build_dir="$MINT_RUN_BUILD_DIR/versioning"
+test_run_dir="$TESTS_RUN_CORE_DIR/versioning"
+test_build_dir="$TESTS_RUN_BUILD_DIR/versioning"
 
 (cd "$test_build_dir" && CGO_ENABLED=0 go build --ldflags "-s -w" -o "$test_run_dir/tests")

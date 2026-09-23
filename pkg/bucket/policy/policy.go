@@ -18,6 +18,7 @@
 package policy
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 )
@@ -128,7 +129,8 @@ redo:
 			if !policy.Statements[i].Equals(statement) {
 				continue
 			}
-			policy.Statements = append(policy.Statements[:j], policy.Statements[j+1:]...)
+			dup := i + 1 + j
+			policy.Statements = append(policy.Statements[:dup], policy.Statements[dup+1:]...)
 			goto redo
 		}
 	}
@@ -139,7 +141,9 @@ func (policy *Policy) UnmarshalJSON(data []byte) error {
 	// Subtype to avoid recursive call to UnmarshalJSON()
 	type subPolicy Policy
 	var sp subPolicy
-	if err := json.Unmarshal(data, &sp); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&sp); err != nil {
 		return err
 	}
 

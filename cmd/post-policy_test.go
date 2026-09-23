@@ -596,7 +596,6 @@ func newPostRequestV4Generic(endPoint, bucketName, objectName string, objData []
 		"x-amz-date":       t.Format(iso8601DateFormat),
 		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
 		"x-amz-meta-uuid":  "1234",
-		"Content-Encoding": "gzip",
 	}
 
 	// Add form data

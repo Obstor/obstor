@@ -3,10 +3,7 @@ Obstor Backend adds S3 and [other supported protocol](/docs/protocols) compatibi
 
 ## Supported Backends
 - [NAS](/docs/backend/nas)
-- [Microsoft Azure Blob Storage](/docs/backend/azure)
-- [HDFS](/docs/backend/hdfs)
 - [S3](/docs/backend/s3)
-- [Google Cloud Storage](/docs/backend/gcs)
 - [SFTP](/docs/backend/sftp)
 
 ## Explore Further

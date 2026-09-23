@@ -33,7 +33,7 @@ import (
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/klauspost/compress/zip"
-	"github.com/obstor/highwayhash"
+	"github.com/minio/highwayhash"
 	"github.com/obstor/obstor-go/v7/pkg/set"
 	"github.com/obstor/obstor/cmd/crypto"
 	xhttp "github.com/obstor/obstor/cmd/http"

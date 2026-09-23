@@ -29,7 +29,7 @@ require 'multipart_body'
 # SERVER_REGION: region obstor server is setup to run
 # ENABLE_HTTPS: (1|0) turn on/off to specify https or
 #                 http services obstor server is running on
-# MINT_DATA_DIR: Data directory where test data files are stored
+# TESTS_DATA_DIR: Data directory where test data files are stored
 
 class AwsSdkRubyTest
   # Set variables necessary to create an s3 client instance.
@@ -848,7 +848,7 @@ file_name_list = ['datafile-1-kB', 'datafile-1-b', 'datafile-6-MB']
 # Add data_dir in front of each file name in file_name_list
 # The location where the bucket and file
 # objects are going to be created.
-data_dir = ENV['MINT_DATA_DIR'] ||= 'MINT_DATA_DIR is not set'
+data_dir = ENV['TESTS_DATA_DIR'] ||= 'TESTS_DATA_DIR is not set'
 file_list = file_name_list.map { |f| File.join(data_dir, f) }
 destination = '/tmp'
 

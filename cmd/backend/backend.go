@@ -23,17 +23,8 @@ import (
 	// NAS
 	_ "github.com/obstor/obstor/cmd/backend/nas"
 
-	// Azure
-	_ "github.com/obstor/obstor/cmd/backend/azure"
-
 	// S3
 	_ "github.com/obstor/obstor/cmd/backend/s3"
-
-	// HDFS
-	_ "github.com/obstor/obstor/cmd/backend/hdfs"
-
-	// GCS (use only if you must, GCS already supports S3 API)
-	_ "github.com/obstor/obstor/cmd/backend/gcs"
 
 	// SFTP
 	_ "github.com/obstor/obstor/cmd/backend/sftp"

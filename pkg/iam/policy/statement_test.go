@@ -68,6 +68,22 @@ func TestStatementIsAllowed(t *testing.T) {
 		condition.NewFunctions(func1),
 	)
 
+	// Admin statement scoped to a narrow bucket resource
+	case5Statement := NewStatement(
+		policy.Allow,
+		NewActionSet(CreateUserAdminAction),
+		NewResourceSet(NewResource("team-a", "/*")),
+		condition.NewFunctions(),
+	)
+
+	// Resourceless admin
+	case6Statement := NewStatement(
+		policy.Allow,
+		NewActionSet(CreateUserAdminAction),
+		NewResourceSet(),
+		condition.NewFunctions(),
+	)
+
 	anonGetBucketLocationArgs := Args{
 		AccountName:     "Q3AM3UQ867SPQQA43P2F",
 		Action:          GetBucketLocationAction,
@@ -120,6 +136,12 @@ func TestStatementIsAllowed(t *testing.T) {
 		ObjectName:      "myobject",
 	}
 
+	createUserAdminArgs := Args{
+		AccountName:     "Q3AM3UQ867SPQQA43P2F",
+		Action:          CreateUserAdminAction,
+		ConditionValues: map[string][]string{},
+	}
+
 	testCases := []struct {
 		statement      Statement
 		args           Args
@@ -152,6 +174,9 @@ func TestStatementIsAllowed(t *testing.T) {
 		{case4Statement, getBucketLocationArgs, true},
 		{case4Statement, putObjectActionArgs, false},
 		{case4Statement, getObjectActionArgs, true},
+
+		{case5Statement, createUserAdminArgs, false},
+		{case6Statement, createUserAdminArgs, true},
 	}
 
 	for i, testCase := range testCases {

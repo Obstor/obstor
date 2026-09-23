@@ -1,18 +1,18 @@
 "use client";
 
-import { AnimatePresence, domAnimation, LazyMotion, m } from "framer-motion";
 import { useCallback, useEffect, useReducer, useState } from "react";
 import {
   addUserAction,
   type BucketSettings,
   createBucketWithSettingsAction,
-  detachUserFromBucketAction,
   getBucketSettingsAction,
   type IAMUser,
   type NamedPolicy,
+  type PolicyRow,
   setUserStatusAction,
   updateBucketSettingsAction,
 } from "@/lib/actions";
+import { Dialog } from "./Dialog";
 
 interface Props {
   open: boolean;
@@ -33,8 +33,9 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-const DEFAULT_POLICY_TEMPLATE = (bucketName: string, name = "admin") => ({
-  name,
+const DEFAULT_POLICY_TEMPLATE = (bucketName: string): PolicyRow => ({
+  origin: "new",
+  name: `${bucketName || "BUCKET_NAME"}-full`,
   policy: JSON.stringify(
     {
       Version: "2012-10-17",
@@ -49,12 +50,18 @@ const DEFAULT_POLICY_TEMPLATE = (bucketName: string, name = "admin") => ({
             "admin:SetBucketTarget",
             "admin:TopLocksInfo",
           ],
-          Resource: [`arn:aws:s3:::${bucketName || "BUCKET_NAME"}*`],
+          Resource: [
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}`,
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}/*`,
+          ],
         },
         {
           Effect: "Allow",
           Action: ["s3:*"],
-          Resource: [`arn:aws:s3:::${bucketName || "BUCKET_NAME"}*`],
+          Resource: [
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}`,
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}/*`,
+          ],
         },
       ],
     },
@@ -63,8 +70,9 @@ const DEFAULT_POLICY_TEMPLATE = (bucketName: string, name = "admin") => ({
   ),
 });
 
-const READONLY_POLICY_TEMPLATE = (bucketName: string) => ({
-  name: "read-only",
+const READONLY_POLICY_TEMPLATE = (bucketName: string): PolicyRow => ({
+  origin: "new",
+  name: `${bucketName || "BUCKET_NAME"}-readonly`,
   policy: JSON.stringify(
     {
       Version: "2012-10-17",
@@ -72,7 +80,10 @@ const READONLY_POLICY_TEMPLATE = (bucketName: string) => ({
         {
           Effect: "Allow",
           Action: ["s3:GetObject", "s3:ListBucket"],
-          Resource: [`arn:aws:s3:::${bucketName || "BUCKET_NAME"}*`],
+          Resource: [
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}`,
+            `arn:aws:s3:::${bucketName || "BUCKET_NAME"}/*`,
+          ],
         },
       ],
     },
@@ -96,6 +107,11 @@ const EMPTY_SETTINGS: BucketSettings = {
   tags: [],
   policies: [],
   users: [],
+  removedPolicies: [],
+  detachedUsers: [],
+  catchAllPolicies: [],
+  attachablePolicies: [],
+  attachableUsers: [],
   sftpEnabled: false,
   s3Enabled: true,
   placementStrategy: "smart",
@@ -121,10 +137,10 @@ function Toggle({
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${
         disabled ? "cursor-not-allowed opacity-40" : ""
-      } ${checked ? "bg-accent" : "bg-surface-overlay"}`}
+      } ${checked ? "bg-amber-500" : "bg-surface-overlay"}`}
     >
       <span
-        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-text-primary shadow-sm transition-transform duration-200 ${
+        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-stone-100 shadow-sm transition-transform duration-200 ${
           checked ? "translate-x-6" : "translate-x-1"
         }`}
       />
@@ -142,11 +158,11 @@ function SettingRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface/50 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-200/5 bg-surface/50 px-4 py-3">
       <div className="min-w-0">
         <p className="font-body text-sm">{label}</p>
         {description && (
-          <p className="mt-0.5 font-body text-[11px] text-text-muted leading-relaxed">
+          <p className="mt-0.5 font-body text-[11px] text-stone-600 leading-relaxed">
             {description}
           </p>
         )}
@@ -158,9 +174,32 @@ function SettingRow({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 font-mono text-[10px] text-text-muted uppercase tracking-wider">
-      {children}
-    </p>
+    <p className="mb-2 font-mono text-[10px] text-stone-600 uppercase tracking-wider">{children}</p>
+  );
+}
+
+// CSS height-collapse (grid 0fr<->1fr), replaces framer accordion. inert when closed.
+function Collapse({
+  open,
+  className = "",
+  children,
+}: {
+  open: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="grid transition-[grid-template-rows] duration-200 ease-out"
+      style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+      inert={!open}
+    >
+      <div
+        className={`overflow-hidden transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"} ${className}`}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -185,10 +224,10 @@ function GeneralTab({
             onChange({ name: e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, "") })
           }
           placeholder="my-bucket"
-          className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-text-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg border border-amber-200/5 bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
         />
         {!isEdit && settings.name && (
-          <p className="mt-1.5 font-mono text-[10px] text-text-muted">
+          <p className="mt-1.5 font-mono text-[10px] text-stone-600">
             arn:aws:s3:::{settings.name}
           </p>
         )}
@@ -241,16 +280,16 @@ function PublicAccessSection({
             onClick={() => onChange({ publicAccess: p.id })}
             className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
               settings.publicAccess === p.id
-                ? "border-accent/40 bg-accent-subtle"
-                : "border-border bg-surface/50 hover:border-border-bright"
+                ? "border-amber-500/40 bg-amber-500/10"
+                : "border-amber-200/10 bg-surface/50 hover:border-amber-200/20"
             }`}
           >
             <p
-              className={`font-body font-medium text-xs ${settings.publicAccess === p.id ? "text-accent-bright" : "text-text-primary"}`}
+              className={`font-body font-medium text-xs ${settings.publicAccess === p.id ? "text-amber-400" : "text-stone-100"}`}
             >
               {p.label}
             </p>
-            <p className="mt-0.5 font-body text-[10px] text-text-muted">{p.desc}</p>
+            <p className="mt-0.5 font-body text-[10px] text-stone-600">{p.desc}</p>
           </button>
         ))}
       </div>
@@ -274,7 +313,7 @@ function PoliciesAccordion({
   const addPolicy = () => {
     const base =
       settings.policies.length === 0
-        ? DEFAULT_POLICY_TEMPLATE(settings.name, "admin")
+        ? DEFAULT_POLICY_TEMPLATE(settings.name)
         : READONLY_POLICY_TEMPLATE(settings.name);
     // Check if name is available
     const existing = new Set(settings.policies.map((p) => p.name));
@@ -296,6 +335,9 @@ function PoliciesAccordion({
     const pol = settings.policies[idx];
     onChange({
       policies: settings.policies.filter((_, i) => i !== idx),
+      // No record for empty
+      removedPolicies:
+        pol.origin === "new" ? settings.removedPolicies : [...settings.removedPolicies, pol.name],
       // Cascade: detach from any user's selection in the modal
       users: settings.users.map((u) => ({
         ...u,
@@ -303,6 +345,8 @@ function PoliciesAccordion({
       })),
     });
   };
+
+  const [attachPolicy, setAttachPolicy] = useState(false);
 
   // Client-side ID React keys for policies array length
   const [policyUIDs, setPolicyUIDs] = useState<string[]>([]);
@@ -322,75 +366,103 @@ function PoliciesAccordion({
   }, [settings.policies.length]);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface/30">
+    <div className="overflow-hidden rounded-lg border border-amber-200/5 bg-surface/30">
       <button
         type="button"
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface/50"
       >
         <div className="flex items-center gap-3">
-          <span className="icon-[lucide--file-lock] text-accent text-sm" />
+          <span className="icon-[lucide--file-lock] block text-amber-500 text-sm" />
           <div>
             <p className="font-body font-medium text-sm">Access Policies</p>
-            <p className="font-mono text-[10px] text-text-muted">
+            <p className="font-mono text-[10px] text-stone-600">
               {settings.policies.length} polic{settings.policies.length === 1 ? "y" : "ies"} scoped
               to this bucket
             </p>
           </div>
         </div>
         <span
-          className={`icon-[lucide--chevron-down] text-sm text-text-muted transition-transform ${
+          className={`icon-[lucide--chevron-down] text-sm text-stone-600 transition-transform ${
             expanded ? "rotate-180" : ""
           }`}
         />
       </button>
 
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <m.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-3 border-border border-t px-4 py-4">
-              <PublicAccessSection settings={settings} onChange={onChange} />
+      <Collapse open={expanded}>
+        <div className="space-y-3 border-amber-200/10 border-t px-4 py-4">
+          <PublicAccessSection settings={settings} onChange={onChange} />
 
-              {(settings.policies.length > 0 || isEdit) && (
-                <div className="border-border border-t pt-3">
-                  <SectionLabel>Named IAM Policies</SectionLabel>
-                </div>
-              )}
+          {(settings.policies.length > 0 || isEdit) && (
+            <div className="border-amber-200/10 border-t pt-3">
+              <SectionLabel>Named IAM Policies</SectionLabel>
+            </div>
+          )}
 
-              {settings.policies.length === 0 && (
-                <p className="py-2 text-center font-body text-text-muted text-xs">
-                  No named policies defined yet.
-                </p>
-              )}
-              {settings.policies.map((p, idx) => {
-                const key = policyUIDs[idx] ?? `fallback-${idx}`;
-                return (
-                  <PolicyEditor
-                    key={key}
-                    policy={p}
-                    onChange={(patch) => updatePolicy(idx, patch)}
-                    onRemove={() => removePolicy(idx)}
-                  />
-                );
-              })}
+          {settings.policies.length === 0 && (
+            <p className="py-2 text-center font-body text-stone-600 text-xs">
+              No named policies defined yet.
+            </p>
+          )}
+          {settings.policies.map((p, idx) => {
+            const key = policyUIDs[idx] ?? `fallback-${idx}`;
+            return (
+              <PolicyEditor
+                key={key}
+                policy={p}
+                onChange={(patch) => updatePolicy(idx, patch)}
+                onRemove={() => removePolicy(idx)}
+              />
+            );
+          })}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={addPolicy}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-200/5 border-dashed py-2.5 font-body text-stone-600 text-xs transition-colors hover:border-amber-500/60 hover:text-amber-500"
+            >
+              <span className="icon-[lucide--plus] text-[11px]" />
+              Create policy
+            </button>
+            {settings.attachablePolicies.length > 0 && (
               <button
                 type="button"
-                onClick={addPolicy}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border border-dashed py-2.5 font-body text-text-muted text-xs transition-colors hover:border-accent/60 hover:text-accent"
+                onClick={() => setAttachPolicy(true)}
+                className="shrink-0 font-mono text-[11px] text-stone-600 transition-colors hover:text-stone-400"
               >
-                <span className="icon-[lucide--plus] text-[11px]" />
-                Create More
+                Attach existing policy
               </button>
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+            )}
+          </div>
+          {settings.catchAllPolicies.length > 0 && (
+            <p className="font-mono text-[10px] text-stone-600">
+              Also applies here: {settings.catchAllPolicies.join(", ")}. Manage on the Access page.
+            </p>
+          )}
+          {attachPolicy && (
+            <AttachList
+              title="Attach existing policy"
+              items={settings.attachablePolicies.map((p) => ({
+                id: p.name,
+                label: p.name,
+                meta: "Grants other buckets",
+              }))}
+              onCancel={() => setAttachPolicy(false)}
+              onConfirm={(ids) => {
+                const picked = settings.attachablePolicies.filter((p) => ids.includes(p.name));
+                onChange({
+                  policies: [...settings.policies, ...picked],
+                  attachablePolicies: settings.attachablePolicies.filter(
+                    (p) => !ids.includes(p.name),
+                  ),
+                  removedPolicies: settings.removedPolicies.filter((n) => !ids.includes(n)),
+                });
+                setAttachPolicy(false);
+              }}
+            />
+          )}
+        </div>
+      </Collapse>
     </div>
   );
 }
@@ -400,10 +472,11 @@ function PolicyEditor({
   onChange,
   onRemove,
 }: {
-  policy: NamedPolicy;
+  policy: PolicyRow;
   onChange: (patch: Partial<NamedPolicy>) => void;
   onRemove: () => void;
 }) {
+  const shared = policy.origin === "shared";
   const format = () => {
     try {
       const formatted = JSON.stringify(JSON.parse(policy.policy), null, 2);
@@ -414,37 +487,57 @@ function PolicyEditor({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-surface/60 p-3">
+    <div className="rounded-lg border border-amber-200/5 bg-surface/60 p-3">
       <div className="mb-2 flex items-center gap-2">
         <input
           type="text"
           value={policy.name}
+          disabled={policy.origin !== "new"}
+          title={
+            policy.origin === "exclusive" ? "Rename this policy on the Access page." : undefined
+          }
           onChange={(e) => onChange({ name: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "") })}
           placeholder="policy-name"
-          className="flex-1 rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+          className="flex-1 rounded-md border border-amber-200/5 bg-surface px-3 py-1.5 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500 disabled:opacity-60"
         />
-        <button
-          type="button"
-          onClick={format}
-          className="rounded-md bg-surface-overlay px-2.5 py-1 font-mono text-[10px] text-text-muted transition-colors hover:text-text-secondary"
-        >
-          Format
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-danger/10 hover:text-danger"
-        >
-          <span className="icon-[lucide--trash-2] text-[11px]" />
-        </button>
+        {shared && (
+          <span className="rounded border border-amber-200/15 px-1.5 py-0.5 font-mono text-[9px] text-stone-500 uppercase">
+            Shared
+          </span>
+        )}
+        {!shared && (
+          <button
+            type="button"
+            onClick={format}
+            className="rounded-md bg-surface-overlay px-2.5 py-1 font-mono text-[10px] text-stone-600 transition-colors hover:text-stone-400"
+          >
+            Format
+          </button>
+        )}
+        {!shared && (
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove policy"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
+          >
+            <span className="icon-[lucide--trash-2] block text-[11px]" />
+          </button>
+        )}
       </div>
-      <textarea
-        value={policy.policy}
-        onChange={(e) => onChange({ policy: e.target.value })}
-        rows={10}
-        spellCheck={false}
-        className="w-full resize-none rounded-md border border-border bg-void p-3 font-mono text-[11px] text-text-secondary leading-relaxed outline-none transition-colors focus:border-accent"
-      />
+      {shared ? (
+        <p className="font-body text-stone-600 text-xs">
+          Grants other buckets too. Read only here, edit it on the Access page.
+        </p>
+      ) : (
+        <textarea
+          value={policy.policy}
+          onChange={(e) => onChange({ policy: e.target.value })}
+          rows={10}
+          spellCheck={false}
+          className="w-full resize-none rounded-md border border-amber-200/5 bg-void p-3 font-mono text-[11px] text-stone-400 leading-relaxed outline-none transition-colors focus:border-amber-500"
+        />
+      )}
     </div>
   );
 }
@@ -465,6 +558,7 @@ function UsersAccordion({
   onUserError: (err: string) => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [attachUser, setAttachUser] = useState(false);
   const [pendingCreds, setPendingCreds] = useState<{ accessKey: string; secretKey: string } | null>(
     null,
   );
@@ -472,20 +566,17 @@ function UsersAccordion({
 
   const availablePolicies = settings.policies.map((p) => p.name).filter(Boolean);
 
-  const removeUser = async (user: IAMUser) => {
-    // Drop pending users
+  const removeUser = (user: IAMUser) => {
+    // Not written yet, skip detaching on save
     if (user.pendingSecretKey || !isEdit) {
       onChange({ users: settings.users.filter((u) => u.accessKey !== user.accessKey) });
       return;
     }
-    setBusyKey(user.accessKey);
-    const res = await detachUserFromBucketAction(settings.name, user.accessKey);
-    setBusyKey(null);
-    if ("error" in res) {
-      onUserError(res.error);
-      return;
-    }
-    onChange({ users: settings.users.filter((u) => u.accessKey !== user.accessKey) });
+    // On save the account keeps policies that modal didnt change
+    onChange({
+      users: settings.users.filter((u) => u.accessKey !== user.accessKey),
+      detachedUsers: [...settings.detachedUsers, user.accessKey],
+    });
   };
 
   const toggleStatus = async (user: IAMUser) => {
@@ -520,163 +611,187 @@ function UsersAccordion({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface/30">
+    <div className="overflow-hidden rounded-lg border border-amber-200/5 bg-surface/30">
       <button
         type="button"
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface/50"
       >
         <div className="flex items-center gap-3">
-          <span className="icon-[lucide--users] text-accent text-sm" />
+          <span className="icon-[lucide--users] block text-amber-500 text-sm" />
           <div>
             <p className="font-body font-medium text-sm">Users</p>
-            <p className="font-mono text-[10px] text-text-muted">
+            <p className="font-mono text-[10px] text-stone-600">
               {settings.users.length} user{settings.users.length === 1 ? "" : "s"} with access to
               this bucket
             </p>
           </div>
         </div>
         <span
-          className={`icon-[lucide--chevron-down] text-sm text-text-muted transition-transform ${
+          className={`icon-[lucide--chevron-down] text-sm text-stone-600 transition-transform ${
             expanded ? "rotate-180" : ""
           }`}
         />
       </button>
 
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <m.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-3 border-border border-t px-4 py-4">
-              {pendingCreds && (
-                <div className="rounded-lg border border-accent/40 bg-accent-subtle p-3">
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="icon-[lucide--key-round] text-accent text-sm" />
-                    <p className="font-body font-medium text-accent-bright text-xs">
-                      Save these credentials now - the secret won't be shown again.
-                    </p>
-                  </div>
-                  <div className="grid gap-1.5 font-mono text-[11px]">
-                    <div className="flex items-center justify-between gap-2 rounded bg-void px-2 py-1.5">
-                      <span className="text-text-muted">Access Key</span>
-                      <span className="truncate">{pendingCreds.accessKey}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 rounded bg-void px-2 py-1.5">
-                      <span className="text-text-muted">Secret Key</span>
-                      <span className="truncate">{pendingCreds.secretKey}</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setPendingCreds(null)}
-                    className="mt-2 font-body text-[11px] text-accent transition-colors hover:text-accent-bright"
-                  >
-                    Saved credentials, dismiss
-                  </button>
-                </div>
-              )}
-
-              {settings.users.length === 0 && !showAdd && (
-                <p className="py-2 text-center font-body text-text-muted text-xs">
-                  No users attached to this bucket yet.
+      <Collapse open={expanded}>
+        <div className="space-y-3 border-amber-200/10 border-t px-4 py-4">
+          {pendingCreds && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="icon-[lucide--key-round] text-amber-500 text-sm" />
+                <p className="font-body font-medium text-amber-400 text-xs">
+                  Save these credentials now - the secret won't be shown again.
                 </p>
-              )}
-
-              {settings.users.map((u) => (
-                <div
-                  key={u.accessKey}
-                  className="rounded-lg border border-border bg-surface/60 p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="icon-[lucide--circle-user] text-base text-text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-xs">{u.accessKey}</p>
-                      <p className="font-mono text-[10px] text-text-muted">
-                        {u.status === "enabled" ? "Active" : "Disabled"}
-                      </p>
-                    </div>
-                    <Toggle
-                      checked={u.status === "enabled"}
-                      onChange={() => toggleStatus(u)}
-                      disabled={busyKey === u.accessKey}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeUser(u)}
-                      disabled={busyKey === u.accessKey}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                    >
-                      <span className="icon-[lucide--trash-2] text-[11px]" />
-                    </button>
-                  </div>
-
-                  {availablePolicies.length > 0 && (
-                    <div className="mt-3 border-border border-t pt-3">
-                      <p className="mb-1.5 font-mono text-[10px] text-text-muted uppercase tracking-wider">
-                        Member of
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {availablePolicies.map((pn) => {
-                          const checked = u.policies.includes(pn);
-                          return (
-                            <button
-                              key={pn}
-                              type="button"
-                              onClick={() =>
-                                updateUserPolicies(
-                                  u.accessKey,
-                                  checked
-                                    ? u.policies.filter((x) => x !== pn)
-                                    : [...u.policies, pn],
-                                )
-                              }
-                              className={`rounded-md border px-2.5 py-1 font-mono text-[10px] transition-colors ${
-                                checked
-                                  ? "border-accent/40 bg-accent-subtle text-accent-bright"
-                                  : "border-border bg-surface text-text-muted hover:border-border-bright hover:text-text-secondary"
-                              }`}
-                            >
-                              {pn}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+              </div>
+              <div className="grid gap-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-2 rounded bg-void px-2 py-1.5">
+                  <span className="text-stone-600">Access Key</span>
+                  <span className="truncate">{pendingCreds.accessKey}</span>
                 </div>
-              ))}
+                <div className="flex items-center justify-between gap-2 rounded bg-void px-2 py-1.5">
+                  <span className="text-stone-600">Secret Key</span>
+                  <span className="truncate">{pendingCreds.secretKey}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingCreds(null)}
+                className="mt-2 font-body text-[11px] text-amber-500 transition-colors hover:text-amber-400"
+              >
+                Saved credentials, dismiss
+              </button>
+            </div>
+          )}
 
-              {showAdd ? (
-                <AddUserForm
-                  isEdit={isEdit}
-                  availablePolicies={availablePolicies}
-                  onCancel={() => setShowAdd(false)}
-                  onCreated={(user, creds) => {
-                    onChange({ users: [...settings.users, user] });
-                    setPendingCreds(creds);
-                    setShowAdd(false);
-                  }}
-                  onError={onUserError}
+          {settings.users.length === 0 && !showAdd && (
+            <p className="py-2 text-center font-body text-stone-600 text-xs">
+              No users attached to this bucket yet.
+            </p>
+          )}
+
+          {settings.users.map((u) => (
+            <div
+              key={u.accessKey}
+              className="rounded-lg border border-amber-200/5 bg-surface/60 p-3"
+            >
+              <div className="flex items-center gap-3">
+                <span className="icon-[lucide--circle-user] text-base text-stone-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-xs">{u.accessKey}</p>
+                  <p className="font-mono text-[10px] text-stone-600">
+                    {u.status === "enabled" ? "Active" : "Disabled"}
+                  </p>
+                </div>
+                <Toggle
+                  checked={u.status === "enabled"}
+                  onChange={() => toggleStatus(u)}
+                  disabled={busyKey === u.accessKey}
                 />
-              ) : (
                 <button
                   type="button"
-                  onClick={() => setShowAdd(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-border border-dashed py-2.5 font-body text-text-muted text-xs transition-colors hover:border-accent/60 hover:text-accent"
+                  onClick={() => removeUser(u)}
+                  disabled={busyKey === u.accessKey}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                 >
-                  <span className="icon-[lucide--user-plus] text-[11px]" />
-                  Add User
+                  <span className="icon-[lucide--trash-2] block text-[11px]" />
+                </button>
+              </div>
+
+              {availablePolicies.length > 0 && (
+                <div className="mt-3 border-amber-200/10 border-t pt-3">
+                  <p className="mb-1.5 font-mono text-[10px] text-stone-600 uppercase tracking-wider">
+                    Member of
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {availablePolicies.map((pn) => {
+                      const checked = u.policies.includes(pn);
+                      return (
+                        <button
+                          key={pn}
+                          type="button"
+                          onClick={() =>
+                            updateUserPolicies(
+                              u.accessKey,
+                              checked ? u.policies.filter((x) => x !== pn) : [...u.policies, pn],
+                            )
+                          }
+                          className={`rounded-md border px-2.5 py-1 font-mono text-[10px] transition-colors ${
+                            checked
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                              : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20 hover:text-stone-400"
+                          }`}
+                        >
+                          {pn}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {showAdd ? (
+            <AddUserForm
+              isEdit={isEdit}
+              availablePolicies={availablePolicies}
+              onCancel={() => setShowAdd(false)}
+              onCreated={(user, creds) => {
+                onChange({ users: [...settings.users, user] });
+                setPendingCreds(creds);
+                setShowAdd(false);
+              }}
+              onError={onUserError}
+            />
+          ) : (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAdd(true)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-200/5 border-dashed py-2.5 font-body text-stone-600 text-xs transition-colors hover:border-amber-500/60 hover:text-amber-500"
+              >
+                <span className="icon-[lucide--user-plus] text-[11px]" />
+                Create user
+              </button>
+              {settings.attachableUsers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAttachUser(true)}
+                  className="shrink-0 font-mono text-[11px] text-stone-600 transition-colors hover:text-stone-400"
+                >
+                  Attach existing user
                 </button>
               )}
             </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+          )}
+          {attachUser && (
+            <AttachList
+              title="Attach existing user"
+              items={settings.attachableUsers.map((u) => ({
+                id: u.accessKey,
+                label: u.accessKey,
+                meta:
+                  u.policies.length === 0
+                    ? "No direct policy"
+                    : `${u.policies.length} ${u.policies.length === 1 ? "policy" : "policies"}`,
+              }))}
+              onCancel={() => setAttachUser(false)}
+              onConfirm={(ids) => {
+                const picked = settings.attachableUsers.filter((u) => ids.includes(u.accessKey));
+                onChange({
+                  users: [...settings.users, ...picked],
+                  attachableUsers: settings.attachableUsers.filter(
+                    (u) => !ids.includes(u.accessKey),
+                  ),
+                  detachedUsers: settings.detachedUsers.filter((k) => !ids.includes(k)),
+                });
+                setAttachUser(false);
+              }}
+            />
+          )}
+        </div>
+      </Collapse>
     </div>
   );
 }
@@ -753,15 +868,15 @@ function AddUserForm({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-accent/40 bg-surface/60 p-3">
+    <div className="space-y-3 rounded-lg border border-amber-500/40 bg-surface/60 p-3">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => setAutoGen(true)}
           className={`flex-1 rounded-md border px-3 py-1.5 font-body text-xs transition-colors ${
             autoGen
-              ? "border-accent/40 bg-accent-subtle text-accent-bright"
-              : "border-border bg-surface text-text-muted hover:border-border-bright"
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+              : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20"
           }`}
         >
           Generate
@@ -771,8 +886,8 @@ function AddUserForm({
           onClick={() => setAutoGen(false)}
           className={`flex-1 rounded-md border px-3 py-1.5 font-body text-xs transition-colors ${
             !autoGen
-              ? "border-accent/40 bg-accent-subtle text-accent-bright"
-              : "border-border bg-surface text-text-muted hover:border-border-bright"
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+              : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20"
           }`}
         >
           Custom
@@ -786,24 +901,24 @@ function AddUserForm({
             value={accessKey}
             onChange={(e) => setAccessKey(e.target.value)}
             placeholder="Access key (≥ 3 chars)"
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+            className="w-full rounded-md border border-amber-200/5 bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
           />
           <input
             type="text"
             value={secretKey}
             onChange={(e) => setSecretKey(e.target.value)}
             placeholder="Secret key (≥ 8 chars)"
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+            className="w-full rounded-md border border-amber-200/5 bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
           />
         </div>
       )}
 
       <div>
-        <p className="mb-1.5 font-mono text-[10px] text-text-muted uppercase tracking-wider">
+        <p className="mb-1.5 font-mono text-[10px] text-stone-600 uppercase tracking-wider">
           Policies (at least one)
         </p>
         {availablePolicies.length === 0 ? (
-          <p className="font-body text-[11px] text-text-muted">
+          <p className="font-body text-[11px] text-stone-600">
             No policies defined yet. Add a policy in the Access Policies section first.
           </p>
         ) : (
@@ -819,8 +934,8 @@ function AddUserForm({
                   }
                   className={`rounded-md border px-2.5 py-1 font-mono text-[10px] transition-colors ${
                     checked
-                      ? "border-accent/40 bg-accent-subtle text-accent-bright"
-                      : "border-border bg-surface text-text-muted hover:border-border-bright hover:text-text-secondary"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                      : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20 hover:text-stone-400"
                   }`}
                 >
                   {pn}
@@ -835,8 +950,8 @@ function AddUserForm({
         <button
           type="button"
           onClick={submit}
-          disabled={busy || availablePolicies.length === 0}
-          className="flex-1 rounded-md bg-accent px-3 py-2 font-body font-medium text-black text-xs transition-colors hover:bg-accent-bright disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy}
+          className="flex-1 rounded-md bg-amber-500 px-3 py-2 font-body font-medium text-black text-xs transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? "Creating..." : "Create User"}
         </button>
@@ -844,13 +959,13 @@ function AddUserForm({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="rounded-md border border-border px-3 py-2 font-body text-text-muted text-xs transition-colors hover:bg-surface-overlay disabled:opacity-50"
+          className="rounded-md border border-amber-200/5 px-3 py-2 font-body text-stone-600 text-xs transition-colors hover:bg-surface-overlay disabled:opacity-50"
         >
           Cancel
         </button>
       </div>
       {!isEdit && (
-        <p className="font-body text-[11px] text-text-muted">
+        <p className="font-body text-[11px] text-stone-600">
           User will be created when you save the bucket.
         </p>
       )}
@@ -930,69 +1045,59 @@ function QuotaTab({
         <Toggle checked={settings.quotaEnabled} onChange={(v) => onChange({ quotaEnabled: v })} />
       </SettingRow>
 
-      <AnimatePresence>
-        {settings.quotaEnabled && (
-          <m.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="space-y-3 overflow-hidden"
-          >
-            <div>
-              <SectionLabel>Quota Type</SectionLabel>
-              <div className="grid grid-cols-2 gap-2">
-                {(["hard", "fifo"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => onChange({ quotaType: t })}
-                    className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
-                      settings.quotaType === t
-                        ? "border-accent/40 bg-accent-subtle"
-                        : "border-border bg-surface/50 hover:border-border-bright"
-                    }`}
-                  >
-                    <p
-                      className={`font-body font-medium text-xs ${settings.quotaType === t ? "text-accent-bright" : "text-text-primary"}`}
-                    >
-                      {t === "hard" ? "Hard Limit" : "FIFO"}
-                    </p>
-                    <p className="mt-0.5 font-body text-[10px] text-text-muted">
-                      {t === "hard"
-                        ? "Reject writes when limit is reached"
-                        : "Delete oldest objects when limit is reached"}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <SectionLabel>Quota Size</SectionLabel>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  value={settings.quotaSize}
-                  onChange={(e) => onChange({ quotaSize: e.target.value })}
-                  placeholder="100"
-                  className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-text-muted focus:border-accent"
-                />
-                <select
-                  value={settings.quotaUnit}
-                  onChange={(e) => onChange({ quotaUnit: e.target.value as "GB" | "TB" | "PB" })}
-                  className="rounded-lg border border-border bg-surface px-3 py-2.5 font-mono text-sm outline-none transition-colors focus:border-accent"
+      <Collapse open={settings.quotaEnabled} className="space-y-3">
+        <div>
+          <SectionLabel>Quota Type</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {(["hard", "fifo"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onChange({ quotaType: t })}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                  settings.quotaType === t
+                    ? "border-amber-500/40 bg-amber-500/10"
+                    : "border-amber-200/10 bg-surface/50 hover:border-amber-200/20"
+                }`}
+              >
+                <p
+                  className={`font-body font-medium text-xs ${settings.quotaType === t ? "text-amber-400" : "text-stone-100"}`}
                 >
-                  <option value="GB">GB</option>
-                  <option value="TB">TB</option>
-                  <option value="PB">PB</option>
-                </select>
-              </div>
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+                  {t === "hard" ? "Hard Limit" : "FIFO"}
+                </p>
+                <p className="mt-0.5 font-body text-[10px] text-stone-600">
+                  {t === "hard"
+                    ? "Reject writes when limit is reached"
+                    : "Delete oldest objects when limit is reached"}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <SectionLabel>Quota Size</SectionLabel>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min="1"
+              value={settings.quotaSize}
+              onChange={(e) => onChange({ quotaSize: e.target.value })}
+              placeholder="100"
+              className="flex-1 rounded-lg border border-amber-200/5 bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
+            />
+            <select
+              value={settings.quotaUnit}
+              onChange={(e) => onChange({ quotaUnit: e.target.value as "GB" | "TB" | "PB" })}
+              className="rounded-lg border border-amber-200/5 bg-surface px-3 py-2.5 font-mono text-sm outline-none transition-colors focus:border-amber-500"
+            >
+              <option value="GB">GB</option>
+              <option value="TB">TB</option>
+              <option value="PB">PB</option>
+            </select>
+          </div>
+        </div>
+      </Collapse>
     </div>
   );
 }
@@ -1016,67 +1121,45 @@ function EncryptionTab({
         />
       </SettingRow>
 
-      <AnimatePresence>
-        {settings.encryptionEnabled && (
-          <m.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="space-y-3 overflow-hidden"
-          >
-            <div>
-              <SectionLabel>Encryption Type</SectionLabel>
-              <div className="grid grid-cols-2 gap-2">
-                {(["SSE-S3", "SSE-KMS"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => onChange({ encryptionType: t })}
-                    className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
-                      settings.encryptionType === t
-                        ? "border-accent/40 bg-accent-subtle"
-                        : "border-border bg-surface/50 hover:border-border-bright"
-                    }`}
-                  >
-                    <p
-                      className={`font-body font-medium text-xs ${settings.encryptionType === t ? "text-accent-bright" : "text-text-primary"}`}
-                    >
-                      {t}
-                    </p>
-                    <p className="mt-0.5 font-body text-[10px] text-text-muted">
-                      {t === "SSE-S3"
-                        ? "Server-managed encryption keys"
-                        : "External KMS-managed keys"}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {settings.encryptionType === "SSE-KMS" && (
-                <m.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="overflow-hidden"
+      <Collapse open={settings.encryptionEnabled} className="space-y-3">
+        <div>
+          <SectionLabel>Encryption Type</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {(["SSE-S3", "SSE-KMS"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onChange({ encryptionType: t })}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                  settings.encryptionType === t
+                    ? "border-amber-500/40 bg-amber-500/10"
+                    : "border-amber-200/10 bg-surface/50 hover:border-amber-200/20"
+                }`}
+              >
+                <p
+                  className={`font-body font-medium text-xs ${settings.encryptionType === t ? "text-amber-400" : "text-stone-100"}`}
                 >
-                  <SectionLabel>KMS Key ID</SectionLabel>
-                  <input
-                    type="text"
-                    value={settings.kmsKeyId}
-                    onChange={(e) => onChange({ kmsKeyId: e.target.value })}
-                    placeholder="arn:aws:kms:region:account:key/key-id"
-                    className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-text-muted focus:border-accent"
-                  />
-                </m.div>
-              )}
-            </AnimatePresence>
-          </m.div>
-        )}
-      </AnimatePresence>
+                  {t}
+                </p>
+                <p className="mt-0.5 font-body text-[10px] text-stone-600">
+                  {t === "SSE-S3" ? "Server-managed encryption keys" : "External KMS-managed keys"}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Collapse open={settings.encryptionType === "SSE-KMS"}>
+          <SectionLabel>KMS Key ID</SectionLabel>
+          <input
+            type="text"
+            value={settings.kmsKeyId}
+            onChange={(e) => onChange({ kmsKeyId: e.target.value })}
+            placeholder="arn:aws:kms:region:account:key/key-id"
+            className="w-full rounded-lg border border-amber-200/5 bg-surface px-4 py-2.5 font-mono text-sm outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
+          />
+        </Collapse>
+      </Collapse>
     </div>
   );
 }
@@ -1102,7 +1185,7 @@ function TagsTab({
         <button
           type="button"
           onClick={addTag}
-          className="flex items-center gap-1.5 rounded-md bg-surface-overlay px-2.5 py-1 font-body text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+          className="flex items-center gap-1.5 rounded-md bg-surface-overlay px-2.5 py-1 font-body text-[11px] text-stone-400 transition-colors hover:text-stone-100"
         >
           <span className="icon-[lucide--plus] text-[10px]" />
           Add Tag
@@ -1110,13 +1193,13 @@ function TagsTab({
       </div>
 
       {settings.tags.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-border border-dashed py-8">
-          <span className="icon-[lucide--tag] mb-2 text-lg text-text-muted" />
-          <p className="font-body text-text-muted text-xs">No tags configured</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-amber-200/5 border-dashed py-8">
+          <span className="icon-[lucide--tag] mb-2 text-lg text-stone-600" />
+          <p className="font-body text-stone-600 text-xs">No tags configured</p>
           <button
             type="button"
             onClick={addTag}
-            className="mt-2 font-body text-accent text-xs transition-colors hover:text-accent-bright"
+            className="mt-2 font-body text-amber-500 text-xs transition-colors hover:text-amber-400"
           >
             Add your first tag
           </button>
@@ -1130,21 +1213,21 @@ function TagsTab({
                 value={tag.key}
                 onChange={(e) => updateTag(i, "key", e.target.value)}
                 placeholder="Key"
-                className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+                className="flex-1 rounded-lg border border-amber-200/5 bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
               />
               <input
                 type="text"
                 value={tag.value}
                 onChange={(e) => updateTag(i, "value", e.target.value)}
                 placeholder="Value"
-                className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+                className="flex-1 rounded-lg border border-amber-200/5 bg-surface px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
               />
               <button
                 type="button"
                 onClick={() => removeTag(i)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
               >
-                <span className="icon-[lucide--x] text-xs" />
+                <span className="icon-[lucide--x] block text-xs" />
               </button>
             </div>
           ))}
@@ -1207,66 +1290,56 @@ function RegionTab({
               onClick={() => onChange({ placementStrategy: s.id })}
               className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                 settings.placementStrategy === s.id
-                  ? "border-accent/40 bg-accent-subtle"
-                  : "border-border bg-surface/50 hover:border-border-bright"
+                  ? "border-amber-500/40 bg-amber-500/10"
+                  : "border-amber-200/10 bg-surface/50 hover:border-amber-200/20"
               }`}
             >
               <p
-                className={`font-body font-medium text-xs ${settings.placementStrategy === s.id ? "text-accent-bright" : "text-text-primary"}`}
+                className={`font-body font-medium text-xs ${settings.placementStrategy === s.id ? "text-amber-400" : "text-stone-100"}`}
               >
                 {s.label}
               </p>
-              <p className="mt-0.5 font-body text-[10px] text-text-muted">{s.desc}</p>
+              <p className="mt-0.5 font-body text-[10px] text-stone-600">{s.desc}</p>
             </button>
           ))}
         </div>
       </div>
 
-      <AnimatePresence>
-        {settings.placementStrategy === "custom" && (
-          <m.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="space-y-3 overflow-hidden"
-          >
-            <div>
-              <SectionLabel>Regions</SectionLabel>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2">
-                {settings.regions.map((region, i) => (
-                  <span
-                    key={region}
-                    className="flex items-center gap-1 rounded bg-surface-overlay px-2 py-0.5 font-mono text-[11px] text-text-secondary"
-                  >
-                    {region}
-                    <button
-                      type="button"
-                      onClick={() => removeRegion(i)}
-                      className="ml-0.5 text-text-muted transition-colors hover:text-text-primary"
-                    >
-                      <span className="icon-[lucide--x] text-[9px]" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  type="text"
-                  value={regionInput}
-                  onChange={(e) => setRegionInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Type a region and press Enter..."
-                  className="min-w-[180px] flex-1 bg-transparent py-0.5 font-mono text-sm outline-none placeholder:text-text-muted"
-                />
-              </div>
-            </div>
+      <Collapse open={settings.placementStrategy === "custom"} className="space-y-3">
+        <div>
+          <SectionLabel>Regions</SectionLabel>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200/5 bg-surface px-3 py-2">
+            {settings.regions.map((region, i) => (
+              <span
+                key={region}
+                className="flex items-center gap-1 rounded bg-surface-overlay px-2 py-0.5 font-mono text-[11px] text-stone-400"
+              >
+                {region}
+                <button
+                  type="button"
+                  onClick={() => removeRegion(i)}
+                  className="ml-0.5 text-stone-600 transition-colors hover:text-stone-100"
+                >
+                  <span className="icon-[lucide--x] text-[9px]" />
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={regionInput}
+              onChange={(e) => setRegionInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a region and press Enter..."
+              className="min-w-[180px] flex-1 bg-transparent py-0.5 font-mono text-sm outline-none placeholder:text-stone-600"
+            />
+          </div>
+        </div>
 
-            <p className="font-body text-[11px] text-text-muted leading-relaxed">
-              Data will only be replicated to the selected regions. At least 2 regions are
-              recommended for durability.
-            </p>
-          </m.div>
-        )}
-      </AnimatePresence>
+        <p className="font-body text-[11px] text-stone-600 leading-relaxed">
+          Data will only be replicated to the selected regions. At least 2 regions are recommended
+          for durability.
+        </p>
+      </Collapse>
     </div>
   );
 }
@@ -1355,7 +1428,7 @@ export function BucketModal({ open, onClose, onSuccess, editBucket }: Props) {
         type: "SET_SETTINGS",
         settings: {
           ...EMPTY_SETTINGS,
-          policies: [DEFAULT_POLICY_TEMPLATE("", "admin")],
+          policies: [DEFAULT_POLICY_TEMPLATE("")],
         },
       });
     }
@@ -1392,167 +1465,177 @@ export function BucketModal({ open, onClose, onSuccess, editBucket }: Props) {
     }
   };
 
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  return (
+    <Dialog open={open} onClose={onClose} className="h-[80vh] max-w-2xl">
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-amber-200/5 bg-abyss shadow-2xl shadow-black/50">
+        {/* Header */}
+        <div className="flex items-center justify-between border-amber-200/10 border-b px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
+              <span
+                className={`text-amber-500 text-sm ${isEdit ? "icon-[lucide--settings]" : "icon-[lucide--plus-circle]"}`}
+              />
+            </div>
+            <div>
+              <h2 className="font-display font-semibold text-base">
+                {isEdit ? "Bucket Settings" : "Create Bucket"}
+              </h2>
+              {isEdit && <p className="font-mono text-[10px] text-stone-600">{editBucket}</p>}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-surface-overlay hover:text-stone-400"
+          >
+            <span className="icon-[lucide--x] block text-sm" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 overflow-x-auto border-amber-200/10 border-b bg-surface/30 px-6 py-1.5">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => dispatch({ type: "SET_TAB", tab: t.id })}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 font-body text-xs transition-all ${
+                tab === t.id
+                  ? "bg-amber-500/10 text-amber-500"
+                  : "text-stone-600 hover:bg-surface-overlay hover:text-stone-400"
+              }`}
+            >
+              <span className={`${t.icon} text-[11px]`} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+            </div>
+          ) : (
+            <>
+              {tab === "general" && (
+                <GeneralTab settings={settings} onChange={update} isEdit={isEdit} />
+              )}
+              {tab === "access" && (
+                <AccessTab
+                  settings={settings}
+                  onChange={update}
+                  isEdit={isEdit}
+                  onUserError={(err) => dispatch({ type: "SET_ERROR", error: err })}
+                />
+              )}
+              {tab === "features" && <FeaturesTab settings={settings} onChange={update} />}
+              {tab === "quota" && <QuotaTab settings={settings} onChange={update} />}
+              {tab === "encryption" && <EncryptionTab settings={settings} onChange={update} />}
+              {tab === "tags" && <TagsTab settings={settings} onChange={update} />}
+              {tab === "region" && <RegionTab settings={settings} onChange={update} />}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-amber-200/10 border-t bg-surface/20 px-6 py-4">
+          <div className="min-w-0 flex-1">
+            {error && (
+              <div className="flex items-center gap-2">
+                <span className="icon-[lucide--alert-circle] shrink-0 text-red-400 text-xs" />
+                <p className="truncate font-body text-red-400 text-xs">{error}</p>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-amber-200/5 px-4 py-2 font-body text-sm text-stone-600 transition-colors hover:bg-surface-overlay hover:text-stone-400"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving || loading}
+              className="rounded-lg bg-amber-500 px-5 py-2 font-body font-medium text-black text-sm transition-all hover:bg-amber-400 disabled:opacity-50"
+            >
+              {saving ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                  {isEdit ? "Saving..." : "Creating..."}
+                </span>
+              ) : isEdit ? (
+                "Save Changes"
+              ) : (
+                "Create Bucket"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function AttachList({
+  title,
+  items,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  items: { id: string; label: string; meta: string }[];
+  onCancel: () => void;
+  onConfirm: (ids: string[]) => void;
+}) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (id: string) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   return (
-    <AnimatePresence>
-      {open && (
-        <LazyMotion features={domAnimation}>
-          <m.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          >
-            {/* Backdrop */}
-            <m.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-void/80 backdrop-blur-sm"
-              onClick={onClose}
-            />
-
-            {/* Modal */}
-            <m.div
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="relative flex h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-abyss shadow-2xl shadow-black/50"
+    <Dialog open onClose={onCancel} className="max-w-md" label={title}>
+      <div className="w-full rounded-xl border border-amber-200/5 bg-abyss p-5">
+        <p className="mb-3 font-display font-semibold text-sm">{title}</p>
+        <div className="mb-4 max-h-72 space-y-1 overflow-y-auto">
+          {items.map((it) => (
+            <label
+              key={it.id}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-surface/50"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between border-border border-b px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10">
-                    <span
-                      className={`text-accent text-sm ${isEdit ? "icon-[lucide--settings]" : "icon-[lucide--plus-circle]"}`}
-                    />
-                  </div>
-                  <div>
-                    <h2 className="font-display font-semibold text-base">
-                      {isEdit ? "Bucket Settings" : "Create Bucket"}
-                    </h2>
-                    {isEdit && (
-                      <p className="font-mono text-[10px] text-text-muted">{editBucket}</p>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-secondary"
-                >
-                  <span className="icon-[lucide--x] text-sm" />
-                </button>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex gap-1 overflow-x-auto border-border border-b bg-surface/30 px-6 py-1.5">
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => dispatch({ type: "SET_TAB", tab: t.id })}
-                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 font-body text-xs transition-all ${
-                      tab === t.id
-                        ? "bg-accent/10 text-accent"
-                        : "text-text-muted hover:bg-surface-overlay hover:text-text-secondary"
-                    }`}
-                  >
-                    <span className={`${t.icon} text-[11px]`} />
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto px-6 py-5">
-                {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                  </div>
-                ) : (
-                  <>
-                    {tab === "general" && (
-                      <GeneralTab settings={settings} onChange={update} isEdit={isEdit} />
-                    )}
-                    {tab === "access" && (
-                      <AccessTab
-                        settings={settings}
-                        onChange={update}
-                        isEdit={isEdit}
-                        onUserError={(err) => dispatch({ type: "SET_ERROR", error: err })}
-                      />
-                    )}
-                    {tab === "features" && <FeaturesTab settings={settings} onChange={update} />}
-                    {tab === "quota" && <QuotaTab settings={settings} onChange={update} />}
-                    {tab === "encryption" && (
-                      <EncryptionTab settings={settings} onChange={update} />
-                    )}
-                    {tab === "tags" && <TagsTab settings={settings} onChange={update} />}
-                    {tab === "region" && <RegionTab settings={settings} onChange={update} />}
-                  </>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between border-border border-t bg-surface/20 px-6 py-4">
-                <div className="min-w-0 flex-1">
-                  <AnimatePresence mode="wait">
-                    {error && (
-                      <m.div
-                        initial={{ opacity: 0, x: -4 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="flex items-center gap-2"
-                      >
-                        <span className="icon-[lucide--alert-circle] shrink-0 text-danger text-xs" />
-                        <p className="truncate font-body text-danger text-xs">{error}</p>
-                      </m.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="rounded-lg border border-border px-4 py-2 font-body text-sm text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-secondary"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={saving || loading}
-                    className="rounded-lg bg-accent px-5 py-2 font-body font-medium text-black text-sm transition-all hover:bg-accent-bright disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <span className="flex items-center gap-2">
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                        {isEdit ? "Saving..." : "Creating..."}
-                      </span>
-                    ) : isEdit ? (
-                      "Save Changes"
-                    ) : (
-                      "Create Bucket"
-                    )}
-                  </button>
-                </div>
-              </div>
-            </m.div>
-          </m.div>
-        </LazyMotion>
-      )}
-    </AnimatePresence>
+              <input
+                type="checkbox"
+                checked={picked.includes(it.id)}
+                onChange={() => toggle(it.id)}
+              />
+              <span className="flex-1 truncate font-mono text-[11px] text-stone-300">
+                {it.label}
+              </span>
+              <span className="font-mono text-[10px] text-stone-600">{it.meta}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-md border border-amber-200/15 px-4 py-2 font-body text-sm text-stone-400 transition-colors hover:bg-white/5"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={picked.length === 0}
+            onClick={() => onConfirm(picked)}
+            className="flex-1 rounded-md bg-amber-500 px-4 py-2 font-body font-medium text-black text-sm transition-colors hover:bg-amber-400 disabled:opacity-40"
+          >
+            Attach
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

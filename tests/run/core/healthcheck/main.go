@@ -48,7 +48,7 @@ const (
 func successLogger(function string, args map[string]interface{}, startTime time.Time) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	slog.Info("test passed", "name", "healthcheck", "function", function, "args", args, "duration", duration.Nanoseconds()/1000000, "status", pass)
 }
 
@@ -56,7 +56,7 @@ func successLogger(function string, args map[string]interface{}, startTime time.
 func failureLog(function string, args map[string]interface{}, startTime time.Time, alert string, message string, err error) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	if err != nil {
 		slog.Error("test failed", "name", "healthcheck", "function", function, "args", args,
 			"duration", duration.Nanoseconds()/1000000, "status", fail, "alert", alert, "message", message, "error", err.Error())

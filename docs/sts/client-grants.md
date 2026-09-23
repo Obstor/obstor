@@ -17,7 +17,7 @@
 
 ## Introduction
 
-Returns a set of temporary security credentials for applications/clients who have been authenticated through client credential grants provided by identity provider. Example providers include KeyCloak, Okta etc.
+Returns a set of temporary security credentials for applications/clients who have been authenticated through client credential grants provided by identity provider. Example providers include Zitadel, Okta etc.
 
 Calling AssumeRoleWithClientGrants does not require the use of Obstor default credentials. Therefore, client application can be distributed that requests temporary security credentials without including Obstor default credentials. Instead, the identity of the caller is validated by using a JWT access token from the identity provider. The temporary security credentials returned by this API consists of an access key, a secret key, and a security token. Applications can use these temporary security credentials to sign calls to Obstor API operations.
 

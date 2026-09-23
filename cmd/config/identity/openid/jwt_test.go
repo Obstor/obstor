@@ -35,6 +35,8 @@ func TestUpdateClaimsExpiry(t *testing.T) {
 		expectedFailure bool
 	}{
 		{"", "", true},
+		{nil, "", true},
+		{nil, "900", true},
 		{"-1", "0", true},
 		{"-1", "900", true},
 		{"1574812326", "900", false},
@@ -59,6 +61,36 @@ func TestUpdateClaimsExpiry(t *testing.T) {
 			}
 			if err == nil && testCase.expectedFailure {
 				t.Error("expected failure, got success")
+			}
+		})
+	}
+}
+
+func TestValidateClaimsAudIss(t *testing.T) {
+	const clientID = "obstor-client"
+	const issuer = "https://idp.example.com"
+
+	cases := []struct {
+		name     string
+		claims   map[string]interface{}
+		clientID string
+		issuer   string
+		wantErr  bool
+	}{
+		{"aud string match", map[string]interface{}{"aud": clientID, "iss": issuer}, clientID, issuer, false},
+		{"aud array match", map[string]interface{}{"aud": []interface{}{"other", clientID}, "iss": issuer}, clientID, issuer, false},
+		{"azp match when aud differs", map[string]interface{}{"aud": "other-rp", "azp": clientID, "iss": issuer}, clientID, issuer, false},
+		{"aud mismatch rejected", map[string]interface{}{"aud": "attacker-rp", "iss": issuer}, clientID, issuer, true},
+		{"aud missing rejected", map[string]interface{}{"iss": issuer}, clientID, issuer, true},
+		{"issuer mismatch rejected", map[string]interface{}{"aud": clientID, "iss": "https://evil.example.com"}, clientID, issuer, true},
+		{"no clientID configured skips aud check", map[string]interface{}{"aud": "anything"}, "", "", false},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			err := validateClaimsAudIss(c.claims, c.clientID, c.issuer)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("wantErr=%v got err=%v", c.wantErr, err)
 			}
 		})
 	}

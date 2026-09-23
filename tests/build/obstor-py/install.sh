@@ -17,7 +17,7 @@
 #
 
 OBSTOR_PY_VERSION="7.2.20"
-test_run_dir="$MINT_RUN_CORE_DIR/obstor-py"
+test_run_dir="$TESTS_RUN_CORE_DIR/obstor-py"
 
 pip3 install --break-system-packages --user faker
 pip3 install --break-system-packages --no-cache-dir obstor=="${OBSTOR_PY_VERSION}"

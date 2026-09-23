@@ -79,7 +79,7 @@ type errorResponse struct {
 func successLogger(function string, args map[string]interface{}, startTime time.Time) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	slog.Info("test passed", "name", "aws-sdk-go-v2", "function", function, "args", args, "duration", duration.Nanoseconds()/1000000, "status", PASS)
 }
 
@@ -87,7 +87,7 @@ func successLogger(function string, args map[string]interface{}, startTime time.
 func failureLog(function string, args map[string]interface{}, startTime time.Time, alert string, message string, err error) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	if err != nil {
 		slog.Error("test failed", "name", "aws-sdk-go-v2", "function", function, "args", args,
 			"duration", duration.Nanoseconds()/1000000, "status", FAIL, "alert", alert, "message", message, "error", err.Error())

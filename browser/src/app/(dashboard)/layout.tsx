@@ -2,21 +2,16 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Sidebar } from "@/components/Sidebar";
-import { humanSize, rpc } from "@/lib/rpc";
+import { getAccessBadgeAction } from "@/lib/actions";
+import { type BucketEntry, humanSize, listBuckets, rpc } from "@/lib/rpc";
 
 interface StorageResult {
   used: number;
-  uiVersion: string;
 }
 
 interface ServerResult {
   ObstorVersion: string;
   ObstorPlatform: string;
-  ObstorRuntime: string;
-}
-
-interface BucketResult {
-  buckets: { name: string; creationDate: string }[] | null;
 }
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -24,16 +19,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const token = cookieStore.get("obstor_token");
   if (!token) redirect("/login");
 
-  let buckets: { name: string; creationDate: string }[] = [];
+  let buckets: BucketEntry[] = [];
   let storageUsed = "0 B";
-  let storageBytes = 0;
   let serverVersion = "";
   let serverPlatform = "";
   let authFailed = false;
 
   try {
-    const bucketsRes = await rpc<BucketResult>("ListBuckets");
-    buckets = bucketsRes.buckets || [];
+    buckets = await listBuckets();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("Unauthorized") || msg.includes("token")) authFailed = true;
@@ -45,7 +38,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   try {
     const storageRes = await rpc<StorageResult>("StorageInfo");
-    storageBytes = storageRes.used;
     storageUsed = humanSize(storageRes.used);
   } catch {
     // non-critical
@@ -59,15 +51,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // non-critical
   }
 
+  const access = await getAccessBadgeAction();
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         buckets={buckets}
         storageUsed={storageUsed}
-        _storageBytes={storageBytes}
         bucketCount={buckets.length}
         serverVersion={serverVersion}
         serverPlatform={serverPlatform}
+        access={access}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />

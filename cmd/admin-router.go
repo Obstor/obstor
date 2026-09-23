@@ -25,11 +25,9 @@ import (
 )
 
 const (
-	adminPathPrefix         = obstorReservedBucketPath + "/admin"
-	adminAPIVersionV2       = madmin.AdminAPIVersionV2
-	adminAPIVersion         = madmin.AdminAPIVersion
-	adminAPIVersionPrefix   = SlashSeparator + adminAPIVersion
-	adminAPIVersionV2Prefix = SlashSeparator + adminAPIVersionV2
+	adminPathPrefix       = obstorReservedBucketPath + "/admin"
+	adminAPIVersion       = madmin.AdminAPIVersion
+	adminAPIVersionPrefix = SlashSeparator + adminAPIVersion
 )
 
 // adminAPIHandlers provides HTTP handlers for Obstor admin API.
@@ -46,7 +44,6 @@ func registerAdminRouter(router *mux.Router, enableConfigOps, enableIAMOps bool)
 
 	adminVersions := []string{
 		adminAPIVersionPrefix,
-		adminAPIVersionV2Prefix,
 	}
 
 	for _, adminVersion := range adminVersions {
@@ -127,19 +124,11 @@ func registerAdminRouter(router *mux.Router, enableConfigOps, enableIAMOps bool)
 			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/list-service-accounts").HandlerFunc(httpTraceHdrs(adminAPI.ListServiceAccounts))
 			adminRouter.Methods(http.MethodDelete).Path(adminVersion+"/delete-service-account").HandlerFunc(httpTraceHdrs(adminAPI.DeleteServiceAccount)).Queries("accessKey", "{accessKey:.*}")
 
-			if adminVersion == adminAPIVersionV2Prefix {
-				// Info policy IAM v2
-				adminRouter.Methods(http.MethodGet).Path(adminVersion+"/info-canned-policy").HandlerFunc(httpTraceHdrs(adminAPI.InfoCannedPolicyV2)).Queries("name", "{name:.*}")
+			// Info policy IAM
+			adminRouter.Methods(http.MethodGet).Path(adminVersion+"/info-canned-policy").HandlerFunc(httpTraceHdrs(adminAPI.InfoCannedPolicy)).Queries("name", "{name:.*}")
 
-				// List policies v2
-				adminRouter.Methods(http.MethodGet).Path(adminVersion + "/list-canned-policies").HandlerFunc(httpTraceHdrs(adminAPI.ListCannedPoliciesV2))
-			} else {
-				// Info policy IAM latest
-				adminRouter.Methods(http.MethodGet).Path(adminVersion+"/info-canned-policy").HandlerFunc(httpTraceHdrs(adminAPI.InfoCannedPolicy)).Queries("name", "{name:.*}")
-
-				// List policies latest
-				adminRouter.Methods(http.MethodGet).Path(adminVersion + "/list-canned-policies").HandlerFunc(httpTraceHdrs(adminAPI.ListCannedPolicies))
-			}
+			// List policies
+			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/list-canned-policies").HandlerFunc(httpTraceHdrs(adminAPI.ListCannedPolicies))
 
 			// Remove policy IAM
 			adminRouter.Methods(http.MethodDelete).Path(adminVersion+"/remove-canned-policy").HandlerFunc(httpTraceHdrs(adminAPI.RemoveCannedPolicy)).Queries("name", "{name:.*}")
@@ -211,9 +200,6 @@ func registerAdminRouter(router *mux.Router, enableConfigOps, enableIAMOps bool)
 		adminRouter.Methods(http.MethodGet).Path(adminVersion + "/kms/key/status").HandlerFunc(httpTraceAll(adminAPI.KMSKeyStatusHandler))
 
 		if !globalIsBackend {
-			// Keep obdinfo for backward compatibility with older clients
-			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/obdinfo").
-				HandlerFunc(httpTraceHdrs(adminAPI.HealthInfoHandler))
 			// -- Health API --
 			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/healthinfo").
 				HandlerFunc(httpTraceHdrs(adminAPI.HealthInfoHandler))

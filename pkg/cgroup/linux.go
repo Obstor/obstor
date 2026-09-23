@@ -27,6 +27,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +50,10 @@ const (
 
 	// Proc controller group path.
 	cgroupFileTemplate = "/proc/%d/cgroup"
+
+	// cgroup v2 memory ceiling file and mount root.
+	memoryMaxParamV2 = "memory.max"
+	cgroupSysPathV2  = "/sys/fs/cgroup"
 )
 
 // CGEntries - represents all the entries in a process cgroup file
@@ -157,6 +162,11 @@ func GetMemoryLimit(pid int) (limit uint64, err error) {
 		return 0, err
 	}
 
+	// cgroup v2 emits a single "0::<path>" line
+	if v2Path, ok := cg[""]; ok && cg["memory"] == "" {
+		return getMemoryLimitV2(filepath.Join(cgroupSysPathV2, v2Path))
+	}
+
 	path := cg["memory"]
 
 	limit, err = getManagerKernValue("memory", path, memoryLimitKernelParam)
@@ -175,4 +185,17 @@ func GetMemoryLimit(pid int) (limit uint64, err error) {
 	}
 
 	return limit, err
+}
+
+// getMemoryLimitV2 reads the cgroup v2 memory.max ceiling, max is unlimited.
+func getMemoryLimitV2(root string) (uint64, error) {
+	b, err := os.ReadFile(filepath.Join(root, memoryMaxParamV2))
+	if err != nil {
+		return 0, err
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "max" {
+		return math.MaxUint64, nil
+	}
+	return strconv.ParseUint(v, 10, 64)
 }

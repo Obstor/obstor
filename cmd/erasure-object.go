@@ -193,6 +193,14 @@ func (er erasureObjects) GetObjectNInfo(ctx context.Context, bucket, object stri
 	}
 	pr, pw := io.Pipe()
 	go func() {
+		// Recover malformed object escapes from process crashes
+		defer func() {
+			if r := recover(); r != nil {
+				rerr := fmt.Errorf("panic in object reader goroutine: %v", r)
+				logger.LogIf(ctx, rerr)
+				pw.CloseWithError(rerr)
+			}
+		}()
 		err := er.getObjectWithFileInfo(ctx, bucket, object, off, length, pw, fi, metaArr, onlineDisks)
 		pw.CloseWithError(err)
 	}()
@@ -361,6 +369,24 @@ func (er erasureObjects) getObjectWithFileInfo(ctx context.Context, bucket, obje
 	return nil
 }
 
+// blockSliceBounds computes the readFrom:readTo of one a block's data
+func blockSliceBounds(blockStart, startOffset, length, written, blkSize int64) (readFrom, readTo int64, err error) {
+	readFrom = 0
+	readTo = blkSize
+	if blockStart < startOffset {
+		readFrom = startOffset - blockStart
+	}
+	remaining := length - written
+	if readTo-readFrom > remaining {
+		readTo = readFrom + remaining
+	}
+	// Handle blocks shorter than nominal size
+	if readFrom > blkSize || readTo > blkSize || readTo < readFrom {
+		return 0, 0, fmt.Errorf("block window [%d:%d] outside block of %d bytes: %w", readFrom, readTo, blkSize, errFileCorrupt)
+	}
+	return readFrom, readTo, nil
+}
+
 // getBlockReplicatedObject reads an object stored as content-addressed blocks.
 func (er erasureObjects) getBlockReplicatedObject(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, fi FileInfo, onlineDisks []StorageAPI) error {
 	if length < 0 {
@@ -386,16 +412,19 @@ func (er erasureObjects) getBlockReplicatedObject(ctx context.Context, bucket, o
 			return toObjectErr(err, bucket, object)
 		}
 
+		// Corrupt blocks where stored bytes differ from its recorded size
+		if int64(len(data)) != blk.Size {
+			err = fmt.Errorf("%s/%s block %d: read %d bytes for a block recorded as %d: %w", bucket, object, i, len(data), blk.Size, errFileCorrupt)
+			logger.LogIf(ctx, err)
+			return toObjectErr(errFileCorrupt, bucket, object)
+		}
+
 		// Calculate the slice of this block that overlaps the requested range.
 		blockStart := int64(i) * blockSize
-		readFrom := int64(0)
-		readTo := blk.Size
-		if blockStart < startOffset {
-			readFrom = startOffset - blockStart
-		}
-		remaining := length - written
-		if readTo-readFrom > remaining {
-			readTo = readFrom + remaining
+		readFrom, readTo, err := blockSliceBounds(blockStart, startOffset, length, written, blk.Size)
+		if err != nil {
+			logger.LogIf(ctx, err)
+			return toObjectErr(errFileCorrupt, bucket, object)
 		}
 
 		n, err := writer.Write(data[readFrom:readTo])

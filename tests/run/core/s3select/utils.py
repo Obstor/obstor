@@ -26,7 +26,7 @@ import uuid
 class LogOutput(object):
     """
     LogOutput is the class for log output. It is required standard for all
-    SDK tests controlled by mint.
+    SDK tests controlled by tests.
     Here are its attributes:
             'name': name of the SDK under test, e.g. 's3select'
             'function': name of the method/api under test with its signature

@@ -149,7 +149,7 @@ export OBSTOR_IDENTITY_OPENID_CONFIG_URL="<CONFIG_URL>"
 export OBSTOR_IDENTITY_OPENID_CLIENT_ID="<client_identifier>"
 ```
 
-Sample URLs for Keycloak are
+Sample URLs for Zitadel are
 
 `config_url` - `http://localhost:8080/auth/realms/demo/.well-known/openid-configuration`
 

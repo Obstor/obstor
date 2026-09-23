@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-MINT_DATA_DIR="$MINT_ROOT_DIR/data"
+TESTS_DATA_DIR="$TESTS_ROOT_DIR/data"
 
 declare -A data_file_map
 data_file_map["datafile-0-b"]="0"
@@ -35,11 +35,11 @@ data_file_map["datafile-11-MB"]="11M"
 data_file_map["datafile-65-MB"]="65M"
 data_file_map["datafile-129-MB"]="129M"
 
-mkdir -p "$MINT_DATA_DIR"
+mkdir -p "$TESTS_DATA_DIR"
 for filename in "${!data_file_map[@]}"; do
-	echo "creating $MINT_DATA_DIR/$filename"
-	if ! shred -n 1 -s "${data_file_map[$filename]}" - 1>"$MINT_DATA_DIR/$filename" 2>/dev/null; then
-		echo "unable to create data file $MINT_DATA_DIR/$filename"
+	echo "creating $TESTS_DATA_DIR/$filename"
+	if ! shred -n 1 -s "${data_file_map[$filename]}" - 1>"$TESTS_DATA_DIR/$filename" 2>/dev/null; then
+		echo "unable to create data file $TESTS_DATA_DIR/$filename"
 		exit 1
 	fi
 done

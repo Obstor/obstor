@@ -20,3 +20,6 @@ export function safeDisplayName(name: string): string {
   }
   return out;
 }
+
+// Block reserved names
+export const RESERVED_BUCKET_NAMES: ReadonlySet<string> = new Set(["access", "login"]);

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"sync"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/klauspost/reedsolomon"
@@ -33,7 +32,7 @@ import (
 
 // Erasure - erasure encoding details.
 type Erasure struct {
-	encoder                  func() reedsolomon.Encoder
+	encoder                  reedsolomon.Encoder
 	dataBlocks, parityBlocks int
 	blockSize                int64
 }
@@ -56,20 +55,12 @@ func NewErasure(ctx context.Context, dataBlocks, parityBlocks int, blockSize int
 	}
 
 	// Encoder when needed.
-	var enc reedsolomon.Encoder
-	var once sync.Once
-	e.encoder = func() reedsolomon.Encoder {
-		once.Do(func() {
-			e, err := reedsolomon.New(dataBlocks, parityBlocks, reedsolomon.WithAutoGoroutines(int(e.ShardSize())))
-			if err != nil {
-				// Error conditions should be checked above.
-				panic(err)
-			}
-			enc = e
-		})
-		return enc
+	enc, err := reedsolomon.New(dataBlocks, parityBlocks, reedsolomon.WithAutoGoroutines(int(e.ShardSize())))
+	if err != nil {
+		return e, err
 	}
-	return
+	e.encoder = enc
+	return e, nil
 }
 
 // EncodeData encodes the given data and returns the erasure-coded data.
@@ -78,12 +69,12 @@ func (e *Erasure) EncodeData(ctx context.Context, data []byte) ([][]byte, error)
 	if len(data) == 0 {
 		return make([][]byte, e.dataBlocks+e.parityBlocks), nil
 	}
-	encoded, err := e.encoder().Split(data)
+	encoded, err := e.encoder.Split(data)
 	if err != nil {
 		logger.LogIf(ctx, err)
 		return nil, err
 	}
-	if err = e.encoder().Encode(encoded); err != nil {
+	if err = e.encoder.Encode(encoded); err != nil {
 		logger.LogIf(ctx, err)
 		return nil, err
 	}
@@ -98,20 +89,19 @@ func (e *Erasure) DecodeDataBlocks(data [][]byte) error {
 	for _, b := range data[:] {
 		if len(b) == 0 {
 			isZero++
-			break
 		}
 	}
 	if isZero == 0 || isZero == len(data) {
-		// If all are zero, payload is 0 bytes.
+		// Al are empty 0-byte payloads.
 		return nil
 	}
-	return e.encoder().ReconstructData(data)
+	return e.encoder.ReconstructData(data)
 }
 
 // DecodeDataAndParityBlocks decodes the given erasure-coded data and verifies it.
 // It returns an error if decoding fails
 func (e *Erasure) DecodeDataAndParityBlocks(ctx context.Context, data [][]byte) error {
-	if err := e.encoder().Reconstruct(data); err != nil {
+	if err := e.encoder.Reconstruct(data); err != nil {
 		logger.LogIf(ctx, err)
 		return err
 	}

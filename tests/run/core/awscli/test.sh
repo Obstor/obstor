@@ -16,8 +16,8 @@
 #  limitations under the License.
 #
 
-HASH_1_KB=$(md5sum "${MINT_DATA_DIR}/datafile-1-kB" | awk '{print $1}')
-HASH_65_MB=$(md5sum "${MINT_DATA_DIR}/datafile-65-MB" | awk '{print $1}')
+HASH_1_KB=$(md5sum "${TESTS_DATA_DIR}/datafile-1-kB" | awk '{print $1}')
+HASH_65_MB=$(md5sum "${TESTS_DATA_DIR}/datafile-65-MB" | awk '{print $1}')
 
 _init() {
 	AWS="aws --endpoint-url $1"
@@ -53,7 +53,7 @@ function log_alert() {
 
 function make_bucket() {
 	# Make bucket
-	bucket_name="awscli-mint-test-bucket-$RANDOM"
+	bucket_name="awscli-test-bucket-$RANDOM"
 	function="${AWS} s3api create-bucket --bucket ${bucket_name}"
 
 	# execute the test
@@ -135,7 +135,7 @@ function test_upload_object() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -222,7 +222,7 @@ function test_lookup_object_prefix() {
 
 	# if directory create succeeds, upload the object.
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key prefix/directory/datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key prefix/directory/datafile-1-kB"
 		# save the ref to function being tested, so it can be logged
 		test_function=${function}
 		out=$($function 2>&1)
@@ -276,7 +276,7 @@ function test_list_objects() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -366,7 +366,7 @@ function test_multipart_upload_0byte() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-0-b --bucket ${bucket_name} --key datafile-0-b"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-0-b --bucket ${bucket_name} --key datafile-0-b"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -385,7 +385,7 @@ function test_multipart_upload_0byte() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 1
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-0-b --upload-id ${upload_id} --part-number 1"
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-0-b --upload-id ${upload_id} --part-number 1"
 		out=$($function)
 		rv=$?
 		etag1=$(echo "$out" | jq -r .ETag)
@@ -464,7 +464,7 @@ function test_multipart_upload() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -483,7 +483,7 @@ function test_multipart_upload() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 1
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-5-MB --upload-id ${upload_id} --part-number 1"
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-5-MB --upload-id ${upload_id} --part-number 1"
 		out=$($function)
 		rv=$?
 		etag1=$(echo "$out" | jq -r .ETag)
@@ -491,7 +491,7 @@ function test_multipart_upload() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 2
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-1-kB --upload-id ${upload_id} --part-number 2"
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-1-kB --upload-id ${upload_id} --part-number 2"
 		out=$($function)
 		rv=$?
 		etag2=$(echo "$out" | jq -r .ETag)
@@ -554,7 +554,7 @@ function test_max_key_list() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-b --bucket ${bucket_name} --key datafile-1-b"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-b --bucket ${bucket_name} --key datafile-1-b"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -652,7 +652,7 @@ function test_copy_object() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -704,7 +704,7 @@ function test_copy_object_storage_class() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -781,7 +781,7 @@ function test_copy_object_storage_class_same() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -858,7 +858,7 @@ function test_presigned_object() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -907,7 +907,7 @@ function test_upload_object_10() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-10-MB --bucket ${bucket_name} --key datafile-10-MB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-10-MB --bucket ${bucket_name} --key datafile-10-MB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -953,7 +953,7 @@ function test_multipart_upload_10() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 1
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-10-MB --upload-id ${upload_id} --part-number 1"
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-10-MB --upload-id ${upload_id} --part-number 1"
 		out=$($function)
 		rv=$?
 		etag1=$(echo "$out" | jq -r .ETag)
@@ -961,7 +961,7 @@ function test_multipart_upload_10() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 2
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-10-MB --upload-id ${upload_id} --part-number 2"
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-10-MB --upload-id ${upload_id} --part-number 2"
 		out=$($function)
 		rv=$?
 		etag2=$(echo "$out" | jq -r .ETag)
@@ -1078,7 +1078,7 @@ function test_bucket_lifecycle() {
 
 # Tests `aws s3 cp` by uploading a local file.
 function test_aws_s3_cp() {
-	file_name="${MINT_DATA_DIR}/datafile-65-MB"
+	file_name="${TESTS_DATA_DIR}/datafile-65-MB"
 
 	# log start time
 	start_time=$(get_time)
@@ -1133,7 +1133,7 @@ function test_aws_s3_sync() {
 
 	# if make bucket succeeds sync all the files in a directory
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3 sync --no-progress $MINT_DATA_DIR s3://${bucket_name}/"
+		function="${AWS} s3 sync --no-progress $TESTS_DATA_DIR s3://${bucket_name}/"
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1180,7 +1180,7 @@ function test_list_objects_error() {
 
 	# if make bucket succeeds upload a file
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 		out=$($function 2>&1)
 		rv=$?
 	else
@@ -1251,7 +1251,7 @@ function test_put_object_error() {
 
 	# if make bucket succeeds upload an object without content-md5.
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --content-md5 invalid"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --content-md5 invalid"
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1264,7 +1264,7 @@ function test_put_object_error() {
 
 	# upload an object without content-length.
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --content-length -1"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --content-length -1"
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1306,7 +1306,7 @@ function test_serverside_encryption() {
 
 	# put object with server side encryption headers
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1379,7 +1379,7 @@ function test_serverside_encryption_multipart() {
 
 	# put object with server side encryption headers
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-65-MB --bucket ${bucket_name} --key datafile-65-MB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-65-MB --bucket ${bucket_name} --key datafile-65-MB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1465,7 +1465,7 @@ function test_serverside_encryption_multipart_copy() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 1
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-5243880-b --upload-id ${upload_id} --part-number 1 --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-5243880-b --upload-id ${upload_id} --part-number 1 --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		out=$($function)
 		rv=$?
 		etag1=$(echo "$out" | jq -r .ETag)
@@ -1473,7 +1473,7 @@ function test_serverside_encryption_multipart_copy() {
 
 	if [ $rv -eq 0 ]; then
 		# Capture etag for part-number 2
-		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${MINT_DATA_DIR}/datafile-5243880-b --upload-id ${upload_id} --part-number 2 --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api upload-part --bucket ${bucket_name} --key ${object_name} --body ${TESTS_DATA_DIR}/datafile-5243880-b --upload-id ${upload_id} --part-number 2 --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		out=$($function)
 		rv=$?
 		etag2=$(echo "$out" | jq -r .ETag)
@@ -1542,7 +1542,7 @@ function test_serverside_encryption_get_range() {
 	rv=$?
 	# put object with server side encryption headers
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-10-kB --bucket ${bucket_name} --key datafile-10-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-10-kB --bucket ${bucket_name} --key datafile-10-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1588,7 +1588,7 @@ function test_serverside_encryption_error() {
 
 	# put object with server side encryption headers  with MD5Sum mismatch for sse-customer-key-md5 header
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg"
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg"
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1601,7 +1601,7 @@ function test_serverside_encryption_error() {
 	fi
 	# put object with missing server side encryption header sse-customer-algorithm
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB  --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB  --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1615,7 +1615,7 @@ function test_serverside_encryption_error() {
 
 	# put object with server side encryption headers successfully
 	if [ $rv -eq 0 ]; then
-		function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
+		function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --sse-customer-algorithm AES256 --sse-customer-key MzJieXRlc2xvbmdzZWNyZXRrZXltdXN0cHJvdmlkZWQ= --sse-customer-key-md5 7PpPLAK26ONlVUGOWlusfg=="
 		test_function=${function}
 		out=$($function 2>&1)
 		rv=$?
@@ -1656,7 +1656,7 @@ function test_serverside_encryption_error() {
 #     start_time=$(get_time)
 
 #     # Make bucket
-#     bucket_name="awscli-mint-test-bucket-$RANDOM"
+#     bucket_name="awscli-test-bucket-$RANDOM"
 #     function="${AWS} s3api create-bucket --bucket ${bucket_name} --object-lock-enabled-for-bucket"
 
 #     # execute the test
@@ -1689,7 +1689,7 @@ function test_serverside_encryption_error() {
 
 #     # if setting object lock configuration succeeds, upload a file first time
 #     if [ $rv -eq 0 ]; then
-#         function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+#         function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 #         out=$($function 2>&1)
 #         rv=$?
 #     else
@@ -1699,7 +1699,7 @@ function test_serverside_encryption_error() {
 
 #     # second time upload will succeed and there shall be now two versions of the object
 #     if [ $rv -eq 0 ]; then
-#         function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
+#         function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB"
 #         out=$($function 2>&1)
 #         rv=$?
 #     else
@@ -1722,7 +1722,7 @@ function test_serverside_encryption_error() {
 #     start_time=$(get_time)
 
 #     # Make bucket
-#     bucket_name="awscli-mint-test-bucket-$RANDOM"
+#     bucket_name="awscli-test-bucket-$RANDOM"
 #     function="${AWS} s3api create-bucket --bucket ${bucket_name} --object-lock-enabled-for-bucket"
 
 #     # execute the test
@@ -1739,7 +1739,7 @@ function test_serverside_encryption_error() {
 
 #     # if make bucket succeeds upload a file
 #     if [ $rv -eq 0 ]; then
-#         function="${AWS} s3api put-object --body ${MINT_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --object-lock-legal-hold-status ON"
+#         function="${AWS} s3api put-object --body ${TESTS_DATA_DIR}/datafile-1-kB --bucket ${bucket_name} --key datafile-1-kB --object-lock-legal-hold-status ON"
 #         out=$($function 2>&1)
 #         errcnt=$(echo "$out" | sed -n '/Bucket is missing ObjectLockConfiguration/p' | wc -l)
 #         # skip test for gateways

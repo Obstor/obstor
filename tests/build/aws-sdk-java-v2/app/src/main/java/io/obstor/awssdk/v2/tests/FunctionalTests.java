@@ -61,7 +61,7 @@ public class FunctionalTests {
 
     private static final Random random = new Random(new SecureRandom().nextLong());
     private static final String bucketName = getRandomName();
-    private static boolean mintEnv = false;
+    private static boolean testsEnv = false;
 
     private static String file1Kb;
     private static String file1Mb;
@@ -79,19 +79,19 @@ public class FunctionalTests {
     /**
      * Prints a success log entry in JSON format.
      */
-    public static void mintSuccessLog(String function, String args, long startTime) {
-        if (mintEnv) {
+    public static void testsSuccessLog(String function, String args, long startTime) {
+        if (testsEnv) {
             System.out.println(
-                    new MintLogger(function, args, System.currentTimeMillis() - startTime, PASS, null, null, null));
+                    new TestsLogger(function, args, System.currentTimeMillis() - startTime, PASS, null, null, null));
         }
     }
 
     /**
      * Prints a failure log entry in JSON format.
      */
-    public static void mintFailedLog(String function, String args, long startTime, String message, String error) {
-        if (mintEnv) {
-            System.out.println(new MintLogger(function, args, System.currentTimeMillis() - startTime, FAILED, null,
+    public static void testsFailedLog(String function, String args, long startTime, String message, String error) {
+        if (testsEnv) {
+            System.out.println(new TestsLogger(function, args, System.currentTimeMillis() - startTime, FAILED, null,
                     message, error));
         }
     }
@@ -99,10 +99,10 @@ public class FunctionalTests {
     /**
      * Prints a ignore log entry in JSON format.
      */
-    public static void mintIgnoredLog(String function, String args, long startTime) {
-        if (mintEnv) {
+    public static void testsIgnoredLog(String function, String args, long startTime) {
+        if (testsEnv) {
             System.out.println(
-                    new MintLogger(function, args, System.currentTimeMillis() - startTime, IGNORED, null, null, null));
+                    new TestsLogger(function, args, System.currentTimeMillis() - startTime, IGNORED, null, null, null));
         }
     }
 
@@ -132,7 +132,7 @@ public class FunctionalTests {
     }
 
     public static void createBucket_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: S3Client.createBucket");
         }
         if (!enableHTTPS) {
@@ -151,9 +151,9 @@ public class FunctionalTests {
                     .bucket(bucket)
                     .build());
             bucketsList.add(bucket);
-            mintSuccessLog("S3Client.createBucket", "bucket: " + bucket, startTime);
+            testsSuccessLog("S3Client.createBucket", "bucket: " + bucket, startTime);
         } catch (Exception ex) {
-            mintFailedLog(
+            testsFailedLog(
                     "S3Client.createBucket",
                     "bucket: " + bucket,
                     startTime,
@@ -164,7 +164,7 @@ public class FunctionalTests {
     }
 
     public static void createBucketWithVersion_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: S3Client.createBucket");
         }
         if (!enableHTTPS) {
@@ -191,9 +191,9 @@ public class FunctionalTests {
                             .build())
                     .build());
             bucketsList.add(bucket);
-            mintSuccessLog("S3Client.putBucketVersioning", "bucket: " + bucket, startTime);
+            testsSuccessLog("S3Client.putBucketVersioning", "bucket: " + bucket, startTime);
         } catch (Exception ex) {
-            mintFailedLog(
+            testsFailedLog(
                     "S3Client.putBucketVersioning",
                     "bucket: " + bucket,
                     startTime,
@@ -204,7 +204,7 @@ public class FunctionalTests {
     }
 
     public static void uploadObject_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: S3Client.putObject");
         }
         if (!enableHTTPS) {
@@ -217,12 +217,12 @@ public class FunctionalTests {
         try {
             s3TestUtils.uploadObject(bucketName, objectName, file1Kb);
             s3TestUtils.downloadObject(bucketName, objectName, file1KbMD5);
-            mintSuccessLog(
+            testsSuccessLog(
                     "S3Client.putObject",
                     "bucket: " + bucketName + ", object: " + objectName + ", String: " + file1Kb,
                     startTime);
         } catch (Exception ex) {
-            mintFailedLog("S3Client.putObject",
+            testsFailedLog("S3Client.putObject",
                     "bucket: " + bucketName + ", object: " + objectName + ", String: " + file1Kb,
                     startTime,
                     null,
@@ -232,7 +232,7 @@ public class FunctionalTests {
     }
 
     public static void uploadMultiPart_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: S3Client.uploadPart");
         }
         if (!enableHTTPS) {
@@ -244,12 +244,12 @@ public class FunctionalTests {
         try {
             s3TestUtils.uploadMultipartObject(bucketName, objectName);
             s3TestUtils.downloadObject(bucketName, objectName, "");
-            mintSuccessLog(
+            testsSuccessLog(
                     "S3Client.uploadPart",
                     "bucket: " + bucketName + ", object: " + objectName,
                     startTime);
         } catch (Exception ex) {
-            mintFailedLog(
+            testsFailedLog(
                     "S3Client.uploadPart",
                     "bucket: " + bucketName + ", object: " + objectName,
                     startTime,
@@ -260,7 +260,7 @@ public class FunctionalTests {
     }
 
     public static void uploadMultiPartAsync_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: Async S3Client.uploadPart");
         }
         if (!enableHTTPS) {
@@ -272,12 +272,12 @@ public class FunctionalTests {
         try {
             s3TestUtils.uploadMultipartObjectAsync(bucketName, objectName);
             s3TestUtils.downloadObject(bucketName, objectName, "");
-            mintSuccessLog(
+            testsSuccessLog(
                     "Async S3Client.uploadPart",
                     "bucket: " + bucketName + ", object: " + objectName,
                     startTime);
         } catch (Exception ex) {
-            mintFailedLog(
+            testsFailedLog(
                     "Async S3Client.uploadPart",
                     "bucket: " + bucketName + ", object: " + objectName,
                     startTime,
@@ -288,7 +288,7 @@ public class FunctionalTests {
     }
 
     public static void uploadObjectVersions_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: S3Client.putObject versions");
         }
         if (!enableHTTPS) {
@@ -323,11 +323,11 @@ public class FunctionalTests {
 
             bucketsList.add(bucket);
 
-            mintSuccessLog("S3Client.putObject versions",
+            testsSuccessLog("S3Client.putObject versions",
                     "bucket: " + bucket + ", object: " + objectName,
                     startTime);
         } catch (Exception ex) {
-            mintFailedLog("S3Client.putObject versions",
+            testsFailedLog("S3Client.putObject versions",
                     "bucket: " + bucket + ", object: " + objectName,
                     startTime,
                     null,
@@ -337,7 +337,7 @@ public class FunctionalTests {
     }
 
     public static void crtClientDownload_test() throws Exception {
-        if (!mintEnv) {
+        if (!testsEnv) {
             System.out.println("Test: Async S3CrtClient.getObject");
         }
         if (!enableHTTPS) {
@@ -365,11 +365,11 @@ public class FunctionalTests {
 
             bucketsList.add(bucket);
 
-	    mintSuccessLog("Async S3CrtClient.getObject versions",
+	    testsSuccessLog("Async S3CrtClient.getObject versions",
                     "bucket: " + bucket + ", object: " + objectName,
                     startTime);
         } catch (Exception ex) {
-            mintFailedLog("Async S3CrtClient.getObject",
+            testsFailedLog("Async S3CrtClient.getObject",
                     "bucket: " + bucket + ", object: " + objectName,
                     startTime,
                     null,
@@ -418,17 +418,17 @@ public class FunctionalTests {
             endpoint = "http://" + endpoint;
         }
 
-        String dataDir = System.getenv("MINT_DATA_DIR");
+        String dataDir = System.getenv("TESTS_DATA_DIR");
         if (dataDir != null && !dataDir.equals("")) {
-            mintEnv = true;
+            testsEnv = true;
             file1Kb = Paths.get(dataDir, "datafile-1-kB").toString();
             file1Mb = Paths.get(dataDir, "datafile-1-MB").toString();
             file6Mb = Paths.get(dataDir, "datafile-6-MB").toString();
         }
 
-        String mintMode = null;
-        if (mintEnv) {
-            mintMode = System.getenv("MINT_MODE");
+        String testsMode = null;
+        if (testsEnv) {
+            testsMode = System.getenv("TESTS_MODE");
         }
         AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
         if (enableHTTPS) {

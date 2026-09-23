@@ -13,8 +13,8 @@ Following are advantages for using temporary credentials:
 ## Identity Federation
 |AuthN | Description |
 | :---------------------- | ------------------------------------------ |
-| [**Client grants**](/docs/sts/client-grants) | Let applications request `client_grants` using any well-known third party identity provider such as KeyCloak, Okta. This is known as the client grants approach to temporary access. Using this approach helps clients keep Obstor credentials to be secured. Obstor STS supports client grants, tested against identity providers such as KeyCloak, Okta. |
-| [**WebIdentity**](/docs/sts/web-identity) | Let users request temporary credentials using any OpenID(OIDC) compatible web identity providers such as KeyCloak, Dex, Facebook, Google etc. |
+| [**Client grants**](/docs/sts/client-grants) | Let applications request `client_grants` using any well-known third party identity provider such as Zitadel, Okta. This is known as the client grants approach to temporary access. Using this approach helps clients keep Obstor credentials to be secured. Obstor STS supports client grants, tested against identity providers such as Zitadel, Okta. |
+| [**WebIdentity**](/docs/sts/web-identity) | Let users request temporary credentials using any OpenID(OIDC) compatible web identity providers such as Zitadel, Dex, Facebook, Google etc. |
 | [**AssumeRole**](/docs/sts/assume-role) | Let Obstor users request temporary credentials using user access and secret keys. |
 | [**AD/LDAP**](/docs/sts/ldap) | Let AD/LDAP users request temporary credentials using AD/LDAP username and password. |
 
@@ -38,7 +38,7 @@ In this document we will explain in detail on how to configure all the prerequis
 ### Prerequisites
 - [Configuring etcd (optional needed only in backend or federation mode)](/docs/sts/etcd)
 
-### Setup Obstor with Keycloak
+### Setup Obstor with Zitadel
 Make sure we have followed the previous step and configured each software independently, once done we can now proceed to use Obstor STS API and Obstor server to use these credentials to perform object API operations.
 
 ```bash
@@ -49,7 +49,7 @@ export OBSTOR_IDENTITY_OPENID_CLIENT_ID="843351d4-1080-11ea-aa20-271ecba3924a"
 obstor server /mnt/data
 ```
 
-### Setup Obstor Backend with Keycloak and Etcd
+### Setup Obstor Backend with Zitadel and Etcd
 Make sure we have followed the previous step and configured each software independently, once done we can now proceed to use Obstor STS API and Obstor backend to use these credentials to perform object API operations.
 
 > NOTE: Obstor backend requires etcd to be configured to use STS API.
@@ -64,14 +64,14 @@ obstor backend s3
 ```
 
 ### Using WebIdentiy API
-On another terminal run `web-identity.go` a sample client application which obtains JWT access tokens from an identity provider, in our case its Keycloak. Uses the returned access token response to get new temporary credentials from the Obstor server using the STS API call `AssumeRoleWithWebIdentity`.
+On another terminal run `web-identity.go` a sample client application which obtains JWT access tokens from an identity provider, in our case its Zitadel. Uses the returned access token response to get new temporary credentials from the Obstor server using the STS API call `AssumeRoleWithWebIdentity`.
 
 ```bash
 $ go run docs/sts/web-identity.go -cid account -csec 072e7f00-4289-469c-9ab2-bbe843c7f5a8  -config-ep "http://localhost:8080/auth/realms/demo/.well-known/openid-configuration" -port 8888
 2026/12/26 17:49:36 listening on http://localhost:8888/
 ```
 
-This will open the login page of keycloak, upon successful login, STS credentials along with any buckets discovered using the credentials will be printed on the screen, for example:
+This will open the login page of zitadel, upon successful login, STS credentials along with any buckets discovered using the credentials will be printed on the screen, for example:
 
 ```json
 {
@@ -87,7 +87,7 @@ This will open the login page of keycloak, upon successful login, STS credential
 }
 ```
 
-> NOTE: You can use the `-cscopes` parameter to restrict the requested scopes, for example to `"openid,policy_role_attribute"`, being `policy_role_attribute` a client_scope / client_mapper that maps a role attribute called policy to a `policy` claim returned by Keycloak.
+> NOTE: You can use the `-cscopes` parameter to restrict the requested scopes, for example to `"openid,policy_role_attribute"`, being `policy_role_attribute` a client_scope / client_mapper that maps a role attribute called policy to a `policy` claim returned by Zitadel.
 
 These credentials can now be used to perform Obstor API operations.
 
@@ -95,8 +95,8 @@ These credentials can now be used to perform Obstor API operations.
 
 - Open Obstor URL on the browser, lets say http://localhost:9000
 - Click on `Log in with OpenID`
-- Provide `Client ID` and press ENTER, if `client_id` is already configured for Obstor this page will automatically redirect to Keycloak user login page.
-- User will be redirected to the Keycloak user login page, upon successful login the user will be redirected to Obstor page and logged in automatically,
+- Provide `Client ID` and press ENTER, if `client_id` is already configured for Obstor this page will automatically redirect to Zitadel user login page.
+- User will be redirected to the Zitadel user login page, upon successful login the user will be redirected to Obstor page and logged in automatically,
   the user should see now the buckets and objects they have access to.
 
 ## Explore Further

@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obstor/highwayhash"
+	"github.com/minio/highwayhash"
 	"github.com/obstor/obstor-go/v7/pkg/set"
 	"github.com/obstor/obstor/cmd/logger/message/log"
 )

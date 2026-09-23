@@ -114,11 +114,12 @@ const (
 )
 
 var globalCLIContext = struct {
-	JSON, Quiet    bool
-	Anonymous      bool
-	Addr           string
-	FrontendAddr   string
-	StrictS3Compat bool
+	JSON, Quiet     bool
+	Anonymous       bool
+	Addr            string
+	FrontendAddr    string
+	FrontendAddrSet bool
+	StrictS3Compat  bool
 }{}
 
 var (
@@ -218,6 +219,9 @@ var (
 
 	// Global HTTP request statisitics
 	globalHTTPStats = newHTTPStats()
+
+	// Aggregates fleet stats on the controller node, nil off-controller.
+	globalFleetStore FleetStore
 
 	// Time when the server is started
 	globalBootTime = UTCNow()
@@ -330,32 +334,4 @@ var errSelfTestFailure = errors.New("self test failed. unsafe to start server")
 // This is so callers dont need reference globalActiveCred directly
 func isRootCredAccessKey(accessKey string) bool {
 	return accessKey != "" && accessKey == globalActiveCred.AccessKey
-}
-
-// Returns obstor global information, as a key value map.
-// returned list of global values is not an exhaustive
-// list. Feel free to add new relevant fields.
-func getGlobalInfo() (globalInfo map[string]interface{}) {
-	// Count unique nodes (hosts) and total drives
-	nodeSet := make(map[string]struct{})
-	totalDrives := 0
-	for _, pool := range globalEndpoints {
-		for _, ep := range pool.Endpoints {
-			totalDrives++
-			host := ep.Host
-			if host == "" {
-				host = "localhost"
-			}
-			nodeSet[host] = struct{}{}
-		}
-	}
-
-	globalInfo = map[string]interface{}{
-		"serverRegion": globalServerRegion,
-		"domains":      globalDomainNames,
-		"nodes":        len(nodeSet),
-		"drives":       totalDrives,
-	}
-
-	return globalInfo
 }

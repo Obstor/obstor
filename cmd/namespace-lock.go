@@ -25,17 +25,28 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"fmt"
 	"time"
 
 	"github.com/obstor/obstor/cmd/logger"
 	"github.com/obstor/obstor/pkg/dsync"
+	"github.com/obstor/obstor/pkg/env"
 	"github.com/obstor/obstor/pkg/lsync"
 )
 
 // Local lock servers
 var globalLockServer *localLocker
+
+// Lock debugging.
+var lockSourceTrace atomic.Bool
+
+func init() {
+	if env.Get("OBSTOR_LOCK_SOURCE_TRACE", "") == "on" {
+		lockSourceTrace.Store(true)
+	}
+}
 
 // RWLocker - locker interface to introduce GetRLock, RUnlock.
 type RWLocker interface {
@@ -268,6 +279,9 @@ func (li *localLockInstance) RUnlock() {
 }
 
 func getSource(n int) string {
+	if !lockSourceTrace.Load() {
+		return ""
+	}
 	var funcName string
 	pc, filename, lineNum, ok := runtime.Caller(n)
 	if ok {

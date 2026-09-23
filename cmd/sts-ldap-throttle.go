@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -44,6 +45,8 @@ const (
 	ldapThrottleIdleTTL = 10 * time.Minute
 	// Soft cap on tracked keys; an idle sweep runs once a map grows past it.
 	ldapThrottleSoftMax = 4096
+	// Hard cap if the idle sweep cant bring under the soft cap
+	ldapThrottleHardMax = 16384
 )
 
 var globalLDAPSTSThrottle = newLDAPSTSThrottle()
@@ -66,11 +69,11 @@ func (t *ldapSTSThrottle) allow(ip, user string) bool {
 }
 
 func (t *ldapSTSThrottle) allowKeyLocked(m map[string]*throttleEntry, key string, now time.Time) bool {
-	if key == "" {
-		return true
-	}
 	if len(m) > ldapThrottleSoftMax {
 		t.evictIdleLocked(m, now)
+		if len(m) >= ldapThrottleHardMax {
+			t.evictOldestLocked(m, ldapThrottleSoftMax)
+		}
 	}
 	e, ok := m[key]
 	if !ok {
@@ -86,5 +89,23 @@ func (t *ldapSTSThrottle) evictIdleLocked(m map[string]*throttleEntry, now time.
 		if now.Sub(e.seen) > ldapThrottleIdleTTL {
 			delete(m, k)
 		}
+	}
+}
+
+func (t *ldapSTSThrottle) evictOldestLocked(m map[string]*throttleEntry, target int) {
+	if len(m) <= target {
+		return
+	}
+	type seenKey struct {
+		key  string
+		seen time.Time
+	}
+	entries := make([]seenKey, 0, len(m))
+	for k, e := range m {
+		entries = append(entries, seenKey{k, e.seen})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].seen.Before(entries[j].seen) })
+	for i := 0; i < len(entries)-target; i++ {
+		delete(m, entries[i].key)
 	}
 }

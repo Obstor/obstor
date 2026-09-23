@@ -17,8 +17,8 @@
 #
 
 CONTAINER_ID=$(grep -o -e '[0-f]\{12,\}' /proc/1/cpuset | awk '{print substr($1, 1, 12)}')
-MINT_DATA_DIR=${MINT_DATA_DIR:-/tests/data}
-MINT_MODE=${MINT_MODE:-core}
+TESTS_DATA_DIR=${TESTS_DATA_DIR:-/tests/data}
+TESTS_MODE=${TESTS_MODE:-core}
 SERVER_REGION=${SERVER_REGION:-us-east-1}
 ENABLE_HTTPS=${ENABLE_HTTPS:-0}
 ENABLE_VIRTUAL_STYLE=${ENABLE_VIRTUAL_STYLE:-0}
@@ -135,8 +135,8 @@ function trust_s3_endpoint_tls_cert() {
 }
 
 function main() {
-	export MINT_DATA_DIR
-	export MINT_MODE
+	export TESTS_DATA_DIR
+	export TESTS_MODE
 	export SERVER_ENDPOINT
 	export SERVER_IP
 	export SERVER_PORT
@@ -154,8 +154,8 @@ function main() {
 	echo "SECRET_KEY:           ***REDACTED***"
 	echo "ENABLE_HTTPS:         $ENABLE_HTTPS"
 	echo "SERVER_REGION:        $SERVER_REGION"
-	echo "MINT_DATA_DIR:        $MINT_DATA_DIR"
-	echo "MINT_MODE:            $MINT_MODE"
+	echo "TESTS_DATA_DIR:        $TESTS_DATA_DIR"
+	echo "TESTS_MODE:            $TESTS_MODE"
 	echo "ENABLE_VIRTUAL_STYLE: $ENABLE_VIRTUAL_STYLE"
 	echo "RUN_ON_FAIL:          $RUN_ON_FAIL"
 	echo

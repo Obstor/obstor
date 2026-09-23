@@ -484,7 +484,14 @@ func serverMain(ctx *cli.Context) {
 	}
 
 	// Set system resources to maximum.
-	setMaxResources()
+	logger.FatalIf(setMaxResources(), "Unable to set system resources to maximum (check OBSTOR_GOMEMLIMIT and OBSTOR_GOGC)")
+
+	// Controller node self-elects when --web-address is set
+	if globalCLIContext.FrontendAddrSet {
+		globalFleetStore = newInMemFleetStore(3 * resolveFleetReportInterval())
+		go newFleetCollector(globalFleetStore).run(GlobalContext)
+		logger.Info("fleet controller active, self-reporting enabled")
+	}
 
 	// Configure server.
 	handler, err := configureServerHandler(globalEndpoints)

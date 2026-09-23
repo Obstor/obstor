@@ -21,7 +21,9 @@
 package cgroup
 
 import (
+	"math"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -137,5 +139,32 @@ func TestMemoryLimitPath(t *testing.T) {
 		if actualPath != testCase.expectedPath {
 			t.Fatalf("Test: %d: Expected: %s, got %s", i+1, testCase.expectedPath, actualPath)
 		}
+	}
+}
+
+// Tests cgroup v2 memory.max parsing for the maximum/unlimited values.
+func TestGetMemoryLimitV2(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "memory.max"), []byte("536870912\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	limit, err := getMemoryLimitV2(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit != 536870912 {
+		t.Fatalf("expected 536870912, got %d", limit)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "memory.max"), []byte("max\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	limit, err = getMemoryLimitV2(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit != math.MaxUint64 {
+		t.Fatalf("expected MaxUint64 for max, got %d", limit)
 	}
 }

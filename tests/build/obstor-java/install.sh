@@ -24,7 +24,7 @@ if [ -z "$OBSTOR_JAVA_VERSION" ]; then
 	exit 1
 fi
 
-test_run_dir="$MINT_RUN_CORE_DIR/obstor-java"
+test_run_dir="$TESTS_RUN_CORE_DIR/obstor-java"
 git clone --quiet https://github.com/obstor/obstor-java.git "$test_run_dir/obstor-java.git"
 (
 	cd "$test_run_dir/obstor-java.git"

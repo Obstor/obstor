@@ -69,6 +69,14 @@ const (
 // stsAPIHandlers implements and provides http handlers for AWS STS API.
 type stsAPIHandlers struct{}
 
+func filterReservedClaims(m map[string]interface{}) {
+	delete(m, ldapUser)
+	delete(m, parentClaim)
+	delete(m, iampolicy.SessionPolicyName)
+	delete(m, iampolicy.DecodedSessionPolicyKey)
+	delete(m, iamPolicyClaimNameSA())
+}
+
 // registerSTSRouter - registers AWS STS compatible APIs.
 func registerSTSRouter(router *mux.Router) {
 	// Initialize STS.
@@ -316,6 +324,8 @@ func (sts *stsAPIHandlers) AssumeRoleWithSSO(w http.ResponseWriter, r *http.Requ
 		writeSTSErrorResponse(ctx, w, true, ErrSTSInvalidParameterValue, err)
 		return
 	}
+
+	filterReservedClaims(m)
 
 	// JWT has requested a custom claim with policy value set.
 	// This is a Obstor STS API specific value, this value should

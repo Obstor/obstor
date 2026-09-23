@@ -168,6 +168,9 @@ func formatGetBackendErasureVersion(formatPath string) (string, error) {
 	if meta.Version != formatMetaVersionV1 {
 		return "", fmt.Errorf(`format.Version expected: %s, got: %s`, formatMetaVersionV1, meta.Version)
 	}
+	if meta.Format == formatBackendFS {
+		return "", fmt.Errorf("uses the single-drive (fs) backend format, but the server is starting in multi-drive (erasure) mode. To run single-drive mode pass exactly one directory; if you passed one, check that every flag uses a current name (e.g. --s3-address, --web-address) so its value is not parsed as an extra drive path")
+	}
 	if meta.Format != formatBackendErasure {
 		return "", fmt.Errorf(`found backend type %s, expected %s`, meta.Format, formatBackendErasure)
 	}

@@ -18,7 +18,7 @@
 
 set -e
 
-OBSTOR_DOTNET_SDK_PATH="$MINT_RUN_CORE_DIR/obstor-dotnet"
+OBSTOR_DOTNET_SDK_PATH="$TESTS_RUN_CORE_DIR/obstor-dotnet"
 
 OBSTOR_DOTNET_SDK_VERSION=$(curl --retry 10 -Ls -o /dev/null -w "%{url_effective}" https://github.com/obstor/obstor-dotnet/releases/latest | sed "s/https:\/\/github.com\/obstor\/obstor-dotnet\/releases\/tag\///")
 if [ -z "$OBSTOR_DOTNET_SDK_VERSION" ]; then
@@ -36,7 +36,7 @@ git clone --quiet https://github.com/obstor/obstor-dotnet.git "${temp_dir}"
 pushd "${temp_dir}" >/dev/null
 git checkout --quiet "tags/${OBSTOR_DOTNET_SDK_VERSION}"
 
-dotnet publish Obstor.IntegrationTests --configuration Mint --framework net8.0 --output ../out
+dotnet publish Obstor.IntegrationTests --configuration Tests --framework net8.0 --output ../out
 
 popd >/dev/null
 rm -fr "${temp_dir}"

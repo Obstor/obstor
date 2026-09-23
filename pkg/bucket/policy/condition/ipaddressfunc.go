@@ -56,7 +56,7 @@ func (f ipAddressFunc) evaluate(values map[string][]string) bool {
 	for _, s := range requestValue {
 		IP := net.ParseIP(s)
 		if IP == nil {
-			panic(fmt.Errorf("invalid IP address '%v'", s))
+			continue
 		}
 
 		IPs = append(IPs, IP)

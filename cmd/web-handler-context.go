@@ -32,7 +32,6 @@ const (
 	kmObject   = "ObjectName"
 	kmObjects  = "Objects"
 	kmPrefix   = "Prefix"
-	kmMarker   = "Marker"
 	kmUsername = "UserName"
 	kmHostname = "HostName"
 	kmPolicy   = "Policy"
@@ -94,11 +93,6 @@ func (km *KeyValueMap) SetObject(object string) {
 	(*km)[kmObject] = object
 }
 
-// SetMarker sets the given marker to the KeyValueMap
-func (km *KeyValueMap) SetMarker(marker string) {
-	(*km)[kmMarker] = marker
-}
-
 // SetPolicy sets the given policy to the KeyValueMap
 func (km *KeyValueMap) SetPolicy(policy string) {
 	(*km)[kmPolicy] = policy
@@ -113,8 +107,6 @@ func (km *KeyValueMap) SetExpiry(expiry int64) {
 func (km *KeyValueMap) SetObjects(objects []string) {
 	objsVal, err := json.Marshal(objects)
 	if err != nil {
-		// NB this can only happen when we can't marshal a Go
-		// slice to its json representation.
 		objsVal = []byte("[]")
 	}
 	(*km)[kmObjects] = string(objsVal)
@@ -161,7 +153,6 @@ func (args *ListObjectsArgs) ToKeyValue() KeyValueMap {
 	km := KeyValueMap{}
 	km.SetBucket(args.BucketName)
 	km.SetPrefix(args.Prefix)
-	km.SetMarker(args.Marker)
 	return km
 }
 
@@ -276,13 +267,6 @@ func (args *PresignedPutArgs) ToKeyValue() KeyValueMap {
 	return km
 }
 
-// ToKeyValue implementation for ListCannedPoliciesArgs
-func (args *ListCannedPoliciesArgs) ToKeyValue() KeyValueMap {
-	km := KeyValueMap{}
-	km.SetBucket(args.BucketName)
-	return km
-}
-
 // ToKeyValue implementation for GetCannedPolicyArgs
 func (args *GetCannedPolicyArgs) ToKeyValue() KeyValueMap {
 	return KeyValueMap{}
@@ -296,13 +280,6 @@ func (args *SetCannedPolicyArgs) ToKeyValue() KeyValueMap {
 // ToKeyValue implementation for DeleteCannedPolicyArgs
 func (args *DeleteCannedPolicyArgs) ToKeyValue() KeyValueMap {
 	return KeyValueMap{}
-}
-
-// ToKeyValue implementation for ListUsersArgs
-func (args *ListUsersArgs) ToKeyValue() KeyValueMap {
-	km := KeyValueMap{}
-	km.SetBucket(args.BucketName)
-	return km
 }
 
 // ToKeyValue implementation for AddIAMUserArgs

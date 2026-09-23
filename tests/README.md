@@ -42,7 +42,7 @@ Below environment variables are required to be passed to the podman container. S
 | `ACCESS_KEY`           | Access key for `SERVER_ENDPOINT` credentials                                                                                                   | `YOUR_ACCESS_KEY`                          |
 | `SECRET_KEY`           | Secret Key for `SERVER_ENDPOINT` credentials                                                                                                   | `YOUR_SECRET_KEY`                          |
 | `ENABLE_HTTPS`         | (Optional) Set `1` to indicate to use HTTPS to access `SERVER_ENDPOINT`. Defaults to `0` (HTTP)                                                | `1`                                        |
-| `MINT_MODE`            | (Optional) Set mode indicating what category of tests to be run by values `core`, `full`. Defaults to `core`                                   | `full`                                     |
+| `TESTS_MODE`           | (Optional) Set mode indicating what category of tests to be run by values `core`, `full`. Defaults to `core`                                   | `full`                                     |
 | `DOMAIN`               | (Optional) Value of OBSTOR_DOMAIN environment variable used in Obstor server                                                                    | `example.com`                              |
 | `ENABLE_VIRTUAL_STYLE` | (Optional) Set `1` to indicate virtual style access . Defaults to `0` (Path style)                                                             | `1`                                        |
 | `RUN_ON_FAIL`          | (Optional) Set `1` to indicate execute all tests independent of failures (currently implemented for obstor-go and obstor-java) . Defaults to `0` | `1`                                        |
@@ -86,7 +86,7 @@ After making changes to Testing source code a local podman image can be built/ru
 $ podman build -t obstor/obstor-testing . -f Dockerfile
 $ podman run -e SERVER_ENDPOINT=<your-server>:9000 -e ACCESS_KEY=YOUR_ACCESS_KEY \
              -e SECRET_KEY=YOUR_SECRET_KEY \
-             -e ENABLE_HTTPS=1 -e MINT_MODE=full obstor/obstor-testing:latest
+             -e ENABLE_HTTPS=1 -e TESTS_MODE=full obstor/obstor-testing:latest
 ```
 
 

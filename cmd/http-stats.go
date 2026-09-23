@@ -181,8 +181,7 @@ func (st *HTTPStats) updateStats(api string, r *http.Request, w *logger.Response
 	// A successful request has a 2xx response code
 	successReq := w.StatusCode >= 200 && w.StatusCode < 300
 
-	if !strings.HasSuffix(r.URL.Path, prometheusMetricsPathLegacy) ||
-		!strings.HasSuffix(r.URL.Path, prometheusMetricsV2ClusterPath) ||
+	if !strings.HasSuffix(r.URL.Path, prometheusMetricsV2ClusterPath) ||
 		!strings.HasSuffix(r.URL.Path, prometheusMetricsV2NodePath) {
 		st.totalS3Requests.Inc(api)
 		if !successReq {

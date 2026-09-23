@@ -54,13 +54,46 @@ func TestGetScheme(t *testing.T) {
 	}
 }
 
-// TestGetSourceIP - check the source ip of a request is parsed correctly.
-func TestGetSourceIP(t *testing.T) {
+// Only use forwarding headers for trusted proxy to avoid X-Forwarded-For spoof.
+func TestGetSourceIPTrustedProxyGate(t *testing.T) {
+	defer func() { _ = SetTrustedProxies(nil) }()
+
+	const spoofed = "9.9.9.9"
+
+	// No trusted proxies, spoofed XFF ignored
+	req := &http.Request{
+		RemoteAddr: "10.0.0.1:12345",
+		Header:     http.Header{xForwardedFor: []string{spoofed}},
+	}
+	if got := GetSourceIP(req); got != "10.0.0.1" {
+		t.Fatalf("untrusted peer: spoofed XFF honored: got %q want 10.0.0.1", got)
+	}
+
+	// Trust the peer, forwarded header is honored.
+	if err := SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := GetSourceIP(req); got != spoofed {
+		t.Fatalf("trusted proxy: XFF not honored: got %q want %q", got, spoofed)
+	}
+
+	// A peer outside the trusted set still cannot spoof.
+	req2 := &http.Request{
+		RemoteAddr: "203.0.113.7:9000",
+		Header:     http.Header{xForwardedFor: []string{spoofed}},
+	}
+	if got := GetSourceIP(req2); got != "203.0.113.7" {
+		t.Fatalf("untrusted peer outside set: spoofed XFF honored: got %q want 203.0.113.7", got)
+	}
+}
+
+// Check forwarding headers are parsed correctly.
+func TestGetSourceIPFromHeaders(t *testing.T) {
 	headers := []headerTest{
-		{xForwardedFor, "8.8.8.8", "8.8.8.8"},                                         // Single address
-		{xForwardedFor, "8.8.8.8, 8.8.4.4", "8.8.8.8"},                                // Multiple
+		{xForwardedFor, "9.9.9.9", "9.9.9.9"},                                         // Single address
+		{xForwardedFor, "9.9.9.9, 8.8.4.4", "9.9.9.9"},                                // Multiple
 		{xForwardedFor, "", ""},                                                       // None
-		{xRealIP, "8.8.8.8", "8.8.8.8"},                                               // Single address
+		{xRealIP, "9.9.9.9", "9.9.9.9"},                                               // Single address
 		{xRealIP, "[2001:db8:cafe::17]:4711", "[2001:db8:cafe::17]:4711"},             // IPv6 address
 		{xRealIP, "", ""},                                                             // None
 		{forwarded, `for="_gazonk"`, "_gazonk"},                                       // Hostname
@@ -75,7 +108,7 @@ func TestGetSourceIP(t *testing.T) {
 			Header: http.Header{
 				v.key: []string{v.val},
 			}}
-		res := GetSourceIP(req)
+		res := GetSourceIPFromHeaders(req)
 		if res != v.expected {
 			t.Errorf("wrong header for %s: got %s want %s", v.key, res,
 				v.expected)

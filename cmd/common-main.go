@@ -217,6 +217,7 @@ func handleCommonCmdArgs(ctx *cli.Context) {
 	if globalCLIContext.FrontendAddr == "" || globalCLIContext.FrontendAddr == ":"+GlobalObstorDefaultWebPort {
 		globalCLIContext.FrontendAddr = ctx.String("web-address")
 	}
+	globalCLIContext.FrontendAddrSet = ctx.IsSet("web-address") || ctx.GlobalIsSet("web-address")
 
 	// S3 API address option
 	globalCLIContext.Addr = ctx.GlobalString("s3-address")
@@ -246,17 +247,8 @@ func handleCommonCmdArgs(ctx *cli.Context) {
 		globalCLIContext.StrictS3Compat = false
 	}
 
-	// Set all config, certs and CAs directories.
-	var configSet, certsSet bool
-	globalConfigDir, configSet = newConfigDirFromCtx(ctx, "config-dir", defaultConfigDir.Get)
-	globalCertsDir, certsSet = newConfigDirFromCtx(ctx, "certs-dir", defaultCertsDir.Get)
-
-	// Remove this code when we deprecate and remove config-dir.
-	// This code is to make sure we inherit from the config-dir
-	// option if certs-dir is not provided.
-	if !certsSet && configSet {
-		globalCertsDir = &ConfigDir{path: filepath.Join(globalConfigDir.Get(), certsDir)}
-	}
+	// Set certs and CAs directories.
+	globalCertsDir, _ = newConfigDirFromCtx(ctx, "certs-dir", defaultCertsDir.Get)
 
 	globalCertsCADir = &ConfigDir{path: filepath.Join(globalCertsDir.Get(), certsCADir)}
 
@@ -327,6 +319,13 @@ func handleCommonEnvVars() {
 			domainIPs.Add(host)
 		}
 		updateDomainIPs(domainIPs)
+	}
+
+	// X-Forwarded-For Forwarding headers (RFC7239)
+	if tp := env.Get("OBSTOR_TRUSTED_PROXIES", ""); len(tp) != 0 {
+		if err := handlers.SetTrustedProxies(strings.Split(tp, config.ValueSeparator)); err != nil {
+			logger.FatalIf(err, "Invalid OBSTOR_TRUSTED_PROXIES value in environment variable")
+		}
 	}
 
 	// In place update is true by default if the OBSTOR_UPDATE is not set

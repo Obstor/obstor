@@ -25,9 +25,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"google.golang.org/api/googleapi"
-
 	obstor "github.com/obstor/obstor-go/v7"
 	"github.com/obstor/obstor-go/v7/pkg/tags"
 	"github.com/obstor/obstor/cmd/config/dns"
@@ -2139,25 +2136,6 @@ func toAPIError(ctx context.Context, err error) APIError {
 					HTTPStatusCode: http.StatusNotImplemented,
 				}
 			}
-		case *googleapi.Error:
-			apiErr = APIError{
-				Code:           "XGCSInternalError",
-				Description:    e.Message,
-				HTTPStatusCode: e.Code,
-			}
-			// GCS may send multiple errors, just pick the first one
-			// since S3 only sends one Error XML response.
-			if len(e.Errors) >= 1 {
-				apiErr.Code = e.Errors[0].Reason
-
-			}
-		case azblob.StorageError:
-			apiErr = APIError{
-				Code:           string(e.ServiceCode()),
-				Description:    e.Error(),
-				HTTPStatusCode: e.Response().StatusCode,
-			}
-			// Add more Backend SDKs here if any in future.
 		default:
 			apiErr = APIError{
 				Code:           apiErr.Code,

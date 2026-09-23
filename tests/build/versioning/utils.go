@@ -66,7 +66,7 @@ type errorResponse struct {
 func successLogger(function string, args map[string]interface{}, startTime time.Time) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	slog.Info("test passed", "name", "versioning", "function", function, "args", args, "duration", duration.Nanoseconds()/1000000, "status", PASS)
 }
 
@@ -74,7 +74,7 @@ func successLogger(function string, args map[string]interface{}, startTime time.
 func ignoreLog(function string, args map[string]interface{}, startTime time.Time, alert string) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	slog.Info("test skipped", "name", "versioning", "function", function, "args", args,
 		"duration", duration.Nanoseconds()/1000000, "status", "NA", "alert", strings.Split(alert, " ")[0]+" is NotImplemented")
 }
@@ -83,7 +83,7 @@ func ignoreLog(function string, args map[string]interface{}, startTime time.Time
 func failureLog(function string, args map[string]interface{}, startTime time.Time, alert string, message string, err error) {
 	// calculate the test case duration
 	duration := time.Since(startTime)
-	// log with the fields as per mint
+	// log with the fields as per tests
 	if pc, file, line, ok := runtime.Caller(1); ok {
 		function = fmt.Sprintf("%s:%d: %s", file, line, runtime.FuncForPC(pc).Name())
 	}

@@ -1,6 +1,18 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 const RPC_ENDPOINT = process.env.OBSTOR_ENDPOINT || "http://localhost:9000";
+
+export interface BucketEntry {
+  name: string;
+  creationDate: string;
+}
+
+// Cache list of buckets for layout and pages
+export const listBuckets = cache(async (): Promise<BucketEntry[]> => {
+  const r = await rpc<{ buckets: BucketEntry[] | null }>("ListBuckets");
+  return r.buckets ?? [];
+});
 
 export async function rpc<T = unknown>(
   method: string,
@@ -47,6 +59,22 @@ export function humanSize(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / 1024 ** i).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+export function humanCount(n: number): string {
+  if (n < 1000) return String(n);
+  const units = [
+    { v: 1e9, s: "B" },
+    { v: 1e6, s: "M" },
+    { v: 1e3, s: "K" },
+  ];
+  for (const u of units) {
+    if (n >= u.v) {
+      const scaled = (n / u.v).toFixed(1).replace(/\.0$/, "");
+      return `${scaled}${u.s}`;
+    }
+  }
+  return String(n);
 }
 
 export function formatDate(dateStr: string): string {

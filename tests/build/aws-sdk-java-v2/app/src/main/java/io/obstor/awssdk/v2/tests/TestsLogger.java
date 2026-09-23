@@ -26,7 +26,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-public class MintLogger {
+public class TestsLogger {
     @JsonProperty("name")
     private String name;
 
@@ -54,7 +54,7 @@ public class MintLogger {
     /**
      * Constructor.
      **/
-    public MintLogger(String function,
+    public TestsLogger(String function,
                       String args,
                       long duration,
                       String status,

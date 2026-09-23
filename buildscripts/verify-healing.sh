@@ -26,8 +26,7 @@ if [ ! -x "$PWD/obstor" ]; then
 fi
 
 WORK_DIR="$PWD/.verify-$RANDOM"
-OBSTOR_CONFIG_DIR="$WORK_DIR/.obstor"
-OBSTOR=( "$PWD/obstor" --config-dir "$OBSTOR_CONFIG_DIR" server )
+OBSTOR=( "$PWD/obstor" server )
 
 export GOGC=25
 
@@ -96,10 +95,6 @@ function __init__()
 {
   echo "Initializing environment"
   mkdir -p "$WORK_DIR"
-  mkdir -p "$OBSTOR_CONFIG_DIR"
-
-  ## version is purposefully set to '3' for obstor to migrate configuration file
-  echo '{"version": "3", "credential": {"accessKey": "obstor", "secretKey": "obstor123"}, "region": "us-east-1"}' > "$OBSTOR_CONFIG_DIR/config.json"
 }
 
 function perform_test() {

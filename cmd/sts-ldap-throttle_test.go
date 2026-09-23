@@ -10,7 +10,10 @@
 
 package cmd
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestLDAPSTSThrottle verifies the per-IP/per-username limiter
 func TestLDAPSTSThrottle(t *testing.T) {
@@ -49,11 +52,28 @@ func TestLDAPSTSThrottle(t *testing.T) {
 		t.Fatalf("expected per-username cap of %d across distinct IPs, got %d", ldapThrottleBurst, userAllowed)
 	}
 
-	// Empty IP and user are not throttled
+	// Empty IP and user share one throttled bucket
+	emptyDenied := false
 	for i := 0; i < ldapThrottleBurst+5; i++ {
 		if !tr.allow("", "") {
-			t.Fatal("empty ip/user must never be throttled")
+			emptyDenied = true
+			break
 		}
+	}
+	if !emptyDenied {
+		t.Fatal("empty ip/user must be throttled, not a free pass")
+	}
+}
+
+// Fresh never-idle keys cant grow the tracking map unbounded.
+func TestLDAPThrottleHardCapBoundsMap(t *testing.T) {
+	tr := newLDAPSTSThrottle()
+	now := UTCNow()
+	for i := 0; i < ldapThrottleHardMax+2000; i++ {
+		tr.allowKeyLocked(tr.perUser, fmt.Sprintf("user-%d", i), now)
+	}
+	if len(tr.perUser) > ldapThrottleHardMax {
+		t.Fatalf("perUser map grew unbounded: %d entries, hard cap %d", len(tr.perUser), ldapThrottleHardMax)
 	}
 }
 

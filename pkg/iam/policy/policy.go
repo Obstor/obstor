@@ -18,6 +18,7 @@
 package iampolicy
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"strings"
@@ -179,7 +180,8 @@ redo:
 			if !iamp.Statements[i].Equals(statement) {
 				continue
 			}
-			iamp.Statements = append(iamp.Statements[:j], iamp.Statements[j+1:]...)
+			dup := i + 1 + j
+			iamp.Statements = append(iamp.Statements[:dup], iamp.Statements[dup+1:]...)
 			goto redo
 		}
 	}
@@ -190,7 +192,9 @@ func (iamp *Policy) UnmarshalJSON(data []byte) error {
 	// Subtype to avoid recursive call to UnmarshalJSON()
 	type subPolicy Policy
 	var sp subPolicy
-	if err := json.Unmarshal(data, &sp); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&sp); err != nil {
 		return err
 	}
 

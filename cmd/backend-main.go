@@ -219,7 +219,7 @@ func StartBackend(ctx *cli.Context, gw Backend) {
 	backendHandleEnvVars()
 
 	// Set system resources to maximum.
-	setMaxResources()
+	logger.FatalIf(setMaxResources(), "Unable to set system resources to maximum (check OBSTOR_GOMEMLIMIT and OBSTOR_GOGC)")
 
 	// Set when backend is enabled
 	globalIsBackend = true

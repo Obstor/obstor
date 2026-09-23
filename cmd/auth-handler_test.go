@@ -20,6 +20,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/url"
@@ -30,6 +31,66 @@ import (
 	"github.com/obstor/obstor/pkg/auth"
 	iampolicy "github.com/obstor/obstor/pkg/iam/policy"
 )
+
+func TestFilterReservedClaimsStripsInjectableKeys(t *testing.T) {
+	m := map[string]interface{}{
+		ldapUser:                          "uid=attacker,dc=example,dc=com",
+		parentClaim:                       "spoofed-parent",
+		iampolicy.SessionPolicyName:       "injected",
+		iampolicy.DecodedSessionPolicyKey: "injected-decoded",
+		iamPolicyClaimNameSA():            "injected-sa",
+		iamPolicyClaimNameOpenID():        "consoleAdmin",
+		"sub":                             "legit-subject",
+	}
+	filterReservedClaims(m)
+
+	for _, k := range []string{ldapUser, parentClaim, iampolicy.SessionPolicyName, iampolicy.DecodedSessionPolicyKey, iamPolicyClaimNameSA()} {
+		if _, ok := m[k]; ok {
+			t.Errorf("reserved claim %q survived filtering (IdP could forge it)", k)
+		}
+	}
+	// Legitimate IdP-provided claims must remain.
+	if _, ok := m[iamPolicyClaimNameOpenID()]; !ok {
+		t.Error("OpenID policy claim was stripped; must be preserved")
+	}
+	if _, ok := m["sub"]; !ok {
+		t.Error("subject claim was stripped; must be preserved")
+	}
+}
+
+func TestGetClaimsFromTokenLDAPKeepsSessionPolicy(t *testing.T) {
+	creds, err := auth.CreateCredentials("testaccess", "testsecretkey1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevCred := globalActiveCred
+	globalActiveCred = creds
+	defer func() { globalActiveCred = prevCred }()
+
+	sessionPolicy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::mybucket/*"]}]}`
+	m := map[string]interface{}{
+		// LDAP STS tokens carry the ldapUser claim
+		ldapUser:                    "uid=alice,ou=people,dc=example,dc=com",
+		iampolicy.SessionPolicyName: base64.StdEncoding.EncodeToString([]byte(sessionPolicy)),
+	}
+	token, err := auth.JWTSignWithAccessKey("testaccess", m, creds.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claims, err := getClaimsFromToken(token)
+	if err != nil {
+		t.Fatalf("getClaimsFromToken: %v", err)
+	}
+
+	decoded, ok := claims[iampolicy.DecodedSessionPolicyKey]
+	if !ok {
+		t.Fatal("DecodedSessionPolicyKey absent: LDAP STS session policy dropped as escalation to full parent policy")
+	}
+	if decoded != sessionPolicy {
+		t.Fatalf("decoded session policy mismatch: got %v", decoded)
+	}
+}
 
 // Test get request auth type.
 func TestGetRequestAuthType(t *testing.T) {

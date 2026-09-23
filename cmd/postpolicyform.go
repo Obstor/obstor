@@ -266,6 +266,12 @@ var policyExemptFields = map[string]struct{}{
 	"File":             {},
 	"Policy":           {},
 
+	// SigV4 signing from browser POST, not expressible as policy conditions
+	xhttp.AmzDate:          {},
+	xhttp.AmzAlgorithm:     {},
+	xhttp.AmzCredential:    {},
+	xhttp.AmzSecurityToken: {},
+
 	// SSE fields
 	xhttp.AmzServerSideEncryptionKmsID:             {},
 	xhttp.AmzServerSideEncryptionKmsContext:        {},
@@ -316,11 +322,9 @@ func checkPostPolicy(formValues http.Header, postPolicyForm PostPolicyForm) erro
 			if !checkPolicyCond(condOp, submittedVal, cond.Value) {
 				return fmt.Errorf("condition not met for field %s", cond.Key)
 			}
-		} else if strings.HasPrefix(cond.Key, "$x-amz-meta-") || strings.HasPrefix(cond.Key, "$x-amz-") {
-			if !checkPolicyCond(condOp, submittedVal, cond.Value) {
-				return fmt.Errorf("condition [%s, %s, %s] not satisfied by submitted value",
-					condOp, cond.Key, cond.Value)
-			}
+		} else if !checkPolicyCond(condOp, submittedVal, cond.Value) {
+			return fmt.Errorf("condition [%s, %s, %s] not satisfied by submitted value",
+				condOp, cond.Key, cond.Value)
 		}
 
 		// Mark field as covered

@@ -197,7 +197,7 @@ The above statement is also valid for all gateway backends.
 ## Test using Browser Dashboard
 Obstor Server comes with an embedded web based object browser. Point your web browser to http://127.0.0.1:9000 to ensure your server has started successfully.
 
-![Dashboard](https://raw.githubusercontent.com/obstor/obstor/main/docs/screenshots/dashboard.png)
+![Dashboard](docs/screenshots/dashboard.svg)
 
 ![Object Browser](https://raw.githubusercontent.com/obstor/obstor/main/docs/screenshots/browser.png)
 
@@ -215,7 +215,6 @@ Obstor server supports rolling upgrades, i.e. you can update one Obstor instance
 - Restart servers one at a time; applications retry and continue their respective operations during the rolling restart.
 - In kubernetes/container environments, use the platform's own mechanism to roll out the updated image.
 - In the case of federated setups, upgrade each cluster individually.
-- If using `kes` as KMS with Obstor, just replace the binary and restart `kes` more information about `kes` can be found [here](https://github.com/obstor/kes/wiki)
 - If using Vault as KMS with Obstor, ensure you have followed the Vault upgrade procedure outlined here: https://www.vaultproject.io/docs/upgrading/index.html
 - If using etcd with Obstor for the federation, ensure you have followed the etcd upgrade procedure outlined here: https://github.com/etcd-io/etcd/blob/master/Documentation/upgrades/upgrading-etcd.md
 

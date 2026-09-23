@@ -31,6 +31,43 @@ import (
 	"github.com/obstor/obstor/cmd/config/storageclass"
 )
 
+func TestBlockSliceBoundsRejectsShortBlock(t *testing.T) {
+	const blockSize = int64(1 << 20) // 1MiB nominal block
+
+	cases := []struct {
+		name                                            string
+		blockStart, startOffset, length, written, blkSz int64
+		wantErr                                         bool
+	}{
+		// Normal full block read stays valid.
+		{"full block", 0, 0, blockSize, 0, blockSize, false},
+		// Interior offset within the block.
+		{"interior offset", 0, 4096, blockSize, 0, blockSize, false},
+		// Tail read shorter than the remaining request.
+		{"tail shorter than remaining", 0, 0, 5000, 0, blockSize, false},
+		// startOffset past a corrupt block: window falls outside stored bytes.
+		{"offset past short block", 0, 50, 80, 0, 10, true},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			from, to, err := blockSliceBounds(c.blockStart, c.startOffset, c.length, c.written, c.blkSz)
+			if c.wantErr {
+				if !errors.Is(err, errFileCorrupt) {
+					t.Fatalf("expected errFileCorrupt, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if from < 0 || to < from || to > c.blkSz {
+				t.Fatalf("invalid slice bounds [%d:%d] for block of %d bytes", from, to, c.blkSz)
+			}
+		})
+	}
+}
+
 func TestRepeatPutObjectPart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

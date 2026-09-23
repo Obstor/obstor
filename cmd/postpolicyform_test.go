@@ -79,6 +79,23 @@ func TestParsePostPolicyForm(t *testing.T) {
 }
 
 // Test Post Policy parsing and checking conditions
+func TestCheckPostPolicyEnforcesCustomKeyCondition(t *testing.T) {
+	form := PostPolicyForm{}
+	form.Expiration = UTCNow().AddDate(0, 0, 1)
+	form.Conditions.Policies = append(form.Conditions.Policies, struct {
+		Operator string
+		Key      string
+		Value    string
+	}{Operator: "eq", Key: "$content-md5", Value: "expected-value"})
+
+	formValues := make(http.Header)
+	formValues.Set("Content-Md5", "attacker-different-value")
+
+	if err := checkPostPolicy(formValues, form); err == nil {
+		t.Fatal("checkPostPolicy accepted a value violating an eq condition on $content-md5 (coverage bypass)")
+	}
+}
+
 func TestPostPolicyForm(t *testing.T) {
 	pp := obstor.NewPostPolicy()
 	pp.SetBucket("testbucket")
@@ -153,8 +170,8 @@ func TestPostPolicyForm(t *testing.T) {
 		}
 
 		err = checkPostPolicy(formValues, postPolicyForm)
-		if err != nil && tt.expectedErr != nil && err.Error() != tt.expectedErr.Error() {
-			t.Fatalf("Test %d:, Expected %s, got %s", i+1, tt.expectedErr.Error(), err.Error())
+		if (err != nil) != (tt.expectedErr != nil) {
+			t.Fatalf("Test %d: expected error %v, got %v", i+1, tt.expectedErr != nil, err)
 		}
 	}
 }

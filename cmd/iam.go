@@ -31,6 +31,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/obstor/obstor-go/v7/pkg/set"
+	xldap "github.com/obstor/obstor/cmd/config/identity/ldap"
 	"github.com/obstor/obstor/cmd/logger"
 	"github.com/obstor/obstor/pkg/auth"
 	iampolicy "github.com/obstor/obstor/pkg/iam/policy"
@@ -1746,6 +1747,10 @@ func (sys *IAMSys) policyDBSet(name, policyName string, userType IAMUserType, is
 		return errInvalidArgument
 	}
 
+	if sys.usersSysType == LDAPUsersSysType {
+		name = xldap.NormalizeDN(name)
+	}
+
 	if sys.usersSysType == ObstorUsersSysType {
 		if !isGroup {
 			if _, ok := sys.iamUsersMap[name]; !ok {
@@ -1842,6 +1847,10 @@ func (sys *IAMSys) PolicyDBGet(name string, isGroup bool, groups ...string) ([]s
 // generated credentials. Thus we skip looking up group memberships, user map,
 // and group map and check the appropriate policy maps directly.
 func (sys *IAMSys) policyDBGet(name string, isGroup bool) (policies []string, err error) {
+	if sys.usersSysType == LDAPUsersSysType {
+		name = xldap.NormalizeDN(name)
+	}
+
 	if isGroup {
 		if sys.usersSysType == ObstorUsersSysType {
 			g, ok := sys.iamGroupsMap[name]

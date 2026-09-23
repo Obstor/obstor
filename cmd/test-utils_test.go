@@ -88,12 +88,6 @@ func TestMain(m *testing.M) {
 	// Set as non-distributed.
 	globalIsDistErasure = false
 
-	// Enable block replication mode for tests (erasure coding stubs are no longer functional).
-	globalIsReplicated = true
-	globalReplicationConfig.ReplicationFactor = 1
-	globalReplicationConfig.BlockSize = 1 << 20
-	globalReplicationConfig.Consistency = "consistent"
-
 	if !testing.Verbose() {
 		// Disable printing console messages during tests.
 		color.Output = io.Discard
@@ -471,11 +465,6 @@ func resetTestGlobals() {
 	resetGlobalHealState()
 	// Reset globalIAMSys to `nil`
 	resetGlobalIAMSys()
-	// Set block replication mode as active
-	globalIsReplicated = true
-	globalReplicationConfig.ReplicationFactor = 1
-	globalReplicationConfig.BlockSize = 1 << 20
-	globalReplicationConfig.Consistency = "consistent"
 }
 
 // Configure the server for the test run.
@@ -2298,7 +2287,7 @@ func uploadTestObject(t *testing.T, apiRouter http.Handler, creds auth.Credentia
 			apiRouter.ServeHTTP(rec, req)
 			checkRespErr(rec, http.StatusOK)
 			header := rec.Header()
-			if v, ok := header["Etag"]; ok { //nolint:staticcheck // ETag is set with non-canonical casing by the server
+			if v, ok := header[xhttp.ETag]; ok { //nolint:staticcheck // server writes non-canonical "ETag" key, recorder preserves it verbatim
 				etag := v[0]
 				if etag == "" {
 					t.Fatalf("Unexpected empty etag")

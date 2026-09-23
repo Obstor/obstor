@@ -214,34 +214,28 @@ func getClaimsFromToken(token string) (map[string]interface{}, error) {
 	}
 
 	if globalPolicyOPA == nil {
-		// If OPA is not set and if ldap claim key is set, allow the claim.
-		if _, ok := claims.MapClaims[ldapUser]; ok {
-			return claims.Map(), nil
+		_, isLDAP := claims.MapClaims[ldapUser]
+		if !isLDAP {
+			// LDAP tokens derive policy from the bind DN map.
+			_, pokOpenID := claims.MapClaims[iamPolicyClaimNameOpenID()]
+			_, pokSA := claims.MapClaims[iamPolicyClaimNameSA()]
+			if !pokOpenID && !pokSA {
+				return nil, errAuthentication
+			}
 		}
 
-		// If OPA is not set, session token should
-		// have a policy and its mandatory, reject
-		// requests without policy claim.
-		_, pokOpenID := claims.MapClaims[iamPolicyClaimNameOpenID()]
-		_, pokSA := claims.MapClaims[iamPolicyClaimNameSA()]
-		if !pokOpenID && !pokSA {
-			return nil, errAuthentication
+		// Decode the STS session policy for every token type (LDAP included)
+		if sp, spok := claims.Lookup(iampolicy.SessionPolicyName); spok {
+			// Session policy is base64 encoded, decode it. Decode fail rejects request.
+			spBytes, err := base64.StdEncoding.DecodeString(sp)
+			if err != nil {
+				// Base64 decoding fails, we should log to indicate
+				// something is malforming the request sent by client.
+				logger.LogIf(GlobalContext, err, logger.Application)
+				return nil, errAuthentication
+			}
+			claims.MapClaims[iampolicy.DecodedSessionPolicyKey] = string(spBytes)
 		}
-
-		sp, spok := claims.Lookup(iampolicy.SessionPolicyName)
-		if !spok {
-			return claims.Map(), nil
-		}
-		// Looks like subpolicy is set and is a string, if set then its
-		// base64 encoded, decode it. Decoding fails reject such requests.
-		spBytes, err := base64.StdEncoding.DecodeString(sp)
-		if err != nil {
-			// Base64 decoding fails, we should log to indicate
-			// something is malforming the request sent by client.
-			logger.LogIf(GlobalContext, err, logger.Application)
-			return nil, errAuthentication
-		}
-		claims.MapClaims[iampolicy.DecodedSessionPolicyKey] = string(spBytes)
 	}
 
 	return claims.Map(), nil

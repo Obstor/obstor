@@ -74,6 +74,45 @@ func TestGetPoliciesFromClaims(t *testing.T) {
 	}
 }
 
+func TestParseConfigRejectsUnknownFields(t *testing.T) {
+	// Reject, not silently dropped into an over-permissive residual policy.
+	data := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject"],"NotResource":["arn:aws:s3:::secret/*"],"Resource":["arn:aws:s3:::public/*"]}]}`
+	if _, err := ParseConfig(strings.NewReader(data)); err == nil {
+		t.Fatal("ParseConfig accepted unknown/negated field (NotResource): over-permissive policy stored")
+	}
+}
+
+func TestDropDuplicateStatementsKeepsDeny(t *testing.T) {
+	allow := NewStatement(
+		policy.Allow,
+		NewActionSet(GetObjectAction),
+		NewResourceSet(NewResource("mybucket", "/*")),
+		condition.NewFunctions(),
+	)
+	deny := NewStatement(
+		policy.Deny,
+		NewActionSet(GetObjectAction),
+		NewResourceSet(NewResource("mybucket", "/secret/*")),
+		condition.NewFunctions(),
+	)
+	// Drop duplicate Allow, never the adjacent Deny guardrail.
+	p := Policy{
+		Version:    DefaultVersion,
+		Statements: []Statement{allow, deny, allow},
+	}
+	p.dropDuplicateStatements()
+
+	denyCount := 0
+	for _, st := range p.Statements {
+		if st.Effect == policy.Deny {
+			denyCount++
+		}
+	}
+	if denyCount != 1 {
+		t.Fatalf("dedup dropped Deny guardrail: got %d Deny in %d statements, want 1", denyCount, len(p.Statements))
+	}
+}
+
 func TestPolicyIsAllowed(t *testing.T) {
 	case1Policy := Policy{
 		Version: DefaultVersion,

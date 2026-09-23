@@ -5,7 +5,7 @@ ENV LANG C.UTF-8
 ENV GOROOT /usr/local/go
 ENV GOPATH /usr/local/gopath
 ENV PATH $GOPATH/bin:$GOROOT/bin:$PATH
-ENV MINT_ROOT_DIR /testing
+ENV TESTS_ROOT_DIR /testing
 
 RUN apt -y update && apt -y upgrade && \
     apt -y --quiet install wget jq curl git dnsmasq

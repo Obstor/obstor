@@ -38,8 +38,6 @@ const (
 	BackendFS = BackendType(madmin.FS)
 	// Multi disk BackendErasure (single, distributed) backend.
 	BackendErasure = BackendType(madmin.Erasure)
-	// Remote backend storage.
-	BackendRemote = BackendType(madmin.Gateway)
 	// Add your own backend.
 )
 

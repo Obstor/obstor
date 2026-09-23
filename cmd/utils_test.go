@@ -31,6 +31,14 @@ import (
 )
 
 // Tests maximum object size.
+func TestSafeDisplayNameStripsQuoteAndBackslash(t *testing.T) {
+	in := `x.exe"; filename*=UTF-8''invoice.pdf`
+	out := safeDisplayName(in)
+	if strings.ContainsAny(out, "\"\\") {
+		t.Fatalf("safeDisplayName left Content-Disposition delimiters: in=%q out=%q", in, out)
+	}
+}
+
 func TestMaxObjectSize(t *testing.T) {
 	sizes := []struct {
 		isMax bool

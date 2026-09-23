@@ -18,8 +18,10 @@
 package cmd
 
 import (
+	"os"
 	"runtime/debug"
 
+	"github.com/obstor/obstor/pkg/env"
 	"github.com/obstor/obstor/pkg/sys"
 )
 
@@ -50,6 +52,26 @@ func setMaxResources() (err error) {
 		return err
 	}
 
-	err = sys.SetMaxMemoryLimit(maxLimit, maxLimit)
-	return err
+	if err = sys.SetMaxMemoryLimit(maxLimit, maxLimit); err != nil {
+		return err
+	}
+
+	// GC tuning: pace the runtime against a real memory ceiling
+	_, gomemSet := os.LookupEnv("GOMEMLIMIT")
+	var totalRAM uint64
+	if st, sErr := sys.GetStats(); sErr == nil {
+		totalRAM = st.TotalRAM
+	}
+	memLimit, gcPercent, setLimit, setGC, tErr := gcTuning(totalRAM, gomemSet,
+		env.Get("OBSTOR_GOMEMLIMIT", ""), env.Get("OBSTOR_GOGC", ""))
+	if tErr != nil {
+		return tErr
+	}
+	if setLimit {
+		debug.SetMemoryLimit(memLimit)
+	}
+	if setGC {
+		debug.SetGCPercent(gcPercent)
+	}
+	return nil
 }

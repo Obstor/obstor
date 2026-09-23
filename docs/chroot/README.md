@@ -21,7 +21,7 @@ sudo mount --bind /proc /mnt/export/${USER}/proc
 ## 3. Run Standalone Obstor in Chroot
 ### GNU/Linux
 ```bash
-sudo chroot --userspec username:group /mnt/export/${USER} /bin/obstor --config-dir=/.obstor server /data
+sudo chroot --userspec username:group /mnt/export/${USER} /bin/obstor server /data
 
 Endpoint:  http://192.168.1.92:9000  http://65.19.167.92:9000
 AccessKey: MVPSPBW4NP2CMV1W3TXD

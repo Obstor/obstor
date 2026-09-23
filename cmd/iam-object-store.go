@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 	"sync"
@@ -364,6 +365,11 @@ func (iamOS *IAMObjectStore) loadMappedPolicy(ctx context.Context, name string, 
 			return errNoSuchPolicy
 		}
 		return err
+	}
+	// An empty policy list is not written
+	if p.Policies == "" {
+		logger.LogIf(ctx, fmt.Errorf("iam: mapped policy for %q loaded with no policy names, file %s may use an unknown key",
+			name, getMappedPolicyPath(name, userType, isGroup)))
 	}
 	m[name] = p
 	return nil

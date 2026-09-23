@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/obstor/highwayhash"
+	"github.com/minio/highwayhash"
 	"github.com/obstor/obstor/cmd/logger"
 	"github.com/obstor/obstor/pkg/bucket/lifecycle"
 	"github.com/obstor/obstor/pkg/hash"

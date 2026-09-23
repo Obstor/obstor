@@ -27,8 +27,8 @@ fi
 
 WORK_DIR="$PWD/.verify-$RANDOM"
 
-export MINT_MODE=core
-export MINT_DATA_DIR="$WORK_DIR/data"
+export TESTS_MODE=core
+export TESTS_DATA_DIR="$WORK_DIR/data"
 export SERVER_ENDPOINT="127.0.0.1:9000"
 export ACCESS_KEY="obstor"
 export SECRET_KEY="obstor123"
@@ -36,11 +36,10 @@ export ENABLE_HTTPS=0
 export GO111MODULE=on
 export GOGC=25
 
-OBSTOR_CONFIG_DIR="$WORK_DIR/.obstor"
-OBSTOR=( "$PWD/obstor" --config-dir "$OBSTOR_CONFIG_DIR" )
+OBSTOR=( "$PWD/obstor" )
 
-FILE_1_MB="$MINT_DATA_DIR/datafile-1-MB"
-FILE_65_MB="$MINT_DATA_DIR/datafile-65-MB"
+FILE_1_MB="$TESTS_DATA_DIR/datafile-1-MB"
+FILE_65_MB="$TESTS_DATA_DIR/datafile-65-MB"
 
 FUNCTIONAL_TESTS="$WORK_DIR/obstor-go-functest"
 
@@ -236,8 +235,7 @@ function __init__()
 {
   echo "Initializing environment"
   mkdir -p "$WORK_DIR"
-  mkdir -p "$OBSTOR_CONFIG_DIR"
-  mkdir -p "$MINT_DATA_DIR"
+  mkdir -p "$TESTS_DATA_DIR"
 
   OBSTOR_GO_VERSION=$(curl --retry 10 -Ls -o /dev/null -w "%{url_effective}" https://github.com/obstor/obstor-go/releases/latest | sed "s/https:\/\/github.com\/obstor\/obstor-go\/releases\/tag\///")
   if [ -z "$OBSTOR_GO_VERSION" ]; then

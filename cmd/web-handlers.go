@@ -37,6 +37,7 @@ import (
 	"path"
 	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -98,13 +99,11 @@ type WebGenericRep struct {
 
 // ServerInfoRep - server info reply.
 type ServerInfoRep struct {
-	ObstorVersion    string
-	ObstorMemory     string
-	ObstorPlatform   string
-	ObstorRuntime    string
-	ObstorGlobalInfo map[string]interface{}
-	ObstorUserInfo   map[string]interface{}
-	UIVersion        string `json:"uiVersion"`
+	ObstorVersion  string
+	ObstorPlatform string
+	ObstorRuntime  string
+	CanSeeFleet    bool   `json:"canSeeFleet"`
+	UIVersion      string `json:"uiVersion"`
 }
 
 // ServerInfo - get server info.
@@ -114,6 +113,7 @@ func (web *webAPIHandlers) ServerInfo(r *http.Request, args *WebGenericArgs, rep
 	if authErr != nil {
 		return toJSONError(ctx, authErr)
 	}
+	reply.CanSeeFleet = callerCanSeeInstanceTotals(ctx, r, claims.AccessKey, claims.Map(), owner)
 	host, err := os.Hostname()
 	if err != nil {
 		host = ""
@@ -125,22 +125,95 @@ func (web *webAPIHandlers) ServerInfo(r *http.Request, args *WebGenericArgs, rep
 	goruntime := fmt.Sprintf("Version: %s | CPUs: %d", runtime.Version(), runtime.NumCPU())
 
 	reply.ObstorVersion = Version
-	reply.ObstorGlobalInfo = getGlobalInfo()
-
-	// Check if the user is IAM user.
-	reply.ObstorUserInfo = map[string]interface{}{
-		"isIAMUser": !owner,
-	}
-
-	if !owner {
-		creds, ok := globalIAMSys.GetUser(claims.AccessKey)
-		if ok && creds.SessionToken != "" {
-			reply.ObstorUserInfo["isTempUser"] = true
-		}
-	}
-
 	reply.ObstorPlatform = platform
 	reply.ObstorRuntime = goruntime
+	reply.UIVersion = Version
+	return nil
+}
+
+// WebServerNode - per-node summary for the dashboard nodes table.
+type WebServerNode struct {
+	Endpoint     string `json:"endpoint"`
+	Online       bool   `json:"online"`
+	DrivesOnline int    `json:"drivesOnline"`
+	DrivesTotal  int    `json:"drivesTotal"`
+	Used         uint64 `json:"used"`
+	Total        uint64 `json:"total"`
+	Pool         int    `json:"pool"`
+}
+
+// ListServersArgs - pagination arguments for ListServers.
+type ListServersArgs struct {
+	Offset int `json:"offset"`
+	Limit  int `json:"limit"`
+}
+
+// ToKeyValue implementation for ListServersArgs.
+func (args *ListServersArgs) ToKeyValue() KeyValueMap {
+	return KeyValueMap{}
+}
+
+// ServerListRep - list per-node cluster info.
+type ServerListRep struct {
+	Servers   []WebServerNode `json:"servers"`
+	Total     int             `json:"total"`
+	UIVersion string          `json:"uiVersion"`
+}
+
+// ListServers - per-node info for the dashboard nodes table from broadcasts
+func (web *webAPIHandlers) ListServers(r *http.Request, args *ListServersArgs, reply *ServerListRep) error {
+	ctx := newWebContext(r, args, "WebListServers")
+	claims, owner, authErr := webRequestAuthenticate(r)
+	if authErr != nil {
+		return toJSONError(ctx, authErr)
+	}
+	// Node topology isn't bucket-scopable, so gate like fleetGuard.
+	if !callerCanSeeInstanceTotals(ctx, r, claims.AccessKey, claims.Map(), owner) {
+		return toJSONError(ctx, errAccessDenied)
+	}
+
+	servers := globalNotificationSys.ServerInfo()
+	servers = append(servers, getLocalServerProperty(globalEndpoints, r))
+	assignPoolNumbers(servers)
+	sort.Slice(servers, func(i, j int) bool {
+		return servers[i].Endpoint < servers[j].Endpoint
+	})
+
+	reply.Total = len(servers)
+
+	offset := args.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(servers) {
+		offset = len(servers)
+	}
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	end := offset + limit
+	if end > len(servers) {
+		end = len(servers)
+	}
+
+	for _, node := range servers[offset:end] {
+		n := WebServerNode{
+			Endpoint:    node.Endpoint,
+			Online:      node.State == string(madmin.ItemOnline),
+			DrivesTotal: len(node.Disks),
+			Pool:        node.PoolNumber,
+		}
+		for _, disk := range node.Disks {
+			if disk.State == madmin.DriveStateOk {
+				n.DrivesOnline++
+			}
+			n.Total += disk.TotalSpace
+			n.Used += disk.UsedSpace
+		}
+		reply.Servers = append(reply.Servers, n)
+	}
+
 	reply.UIVersion = Version
 	return nil
 }
@@ -157,6 +230,59 @@ type StorageInfoRep struct {
 	UIVersion    string `json:"uiVersion"`
 }
 
+func scopedUsage(bucketsUsage map[string]madmin.BucketUsageInfo, allow func(bucket string) bool) (used, objects, buckets uint64) {
+	for bucket, usage := range bucketsUsage {
+		if !allow(bucket) {
+			continue
+		}
+		used += usage.Size
+		objects += usage.ObjectsCount
+		buckets++
+	}
+	return used, objects, buckets
+}
+
+// canSeeInstanceTotals reports whether the caller may view instance-wide hardware totals; not bucket-scopable, so exposed only to a caller allowed on every bucket, derived from bucket access not a hard-coded admin/owner flag.
+func canSeeInstanceTotals(buckets []BucketInfo, allow func(bucket string) bool) bool {
+	if len(buckets) == 0 {
+		return false
+	}
+	for _, bucket := range buckets {
+		if !allow(bucket.Name) {
+			return false
+		}
+	}
+	return true
+}
+
+// callerCanSeeInstanceTotals reports whether the caller may view instance-wide totals: allowed to list every bucket (owner passes via the core IAM short-circuit).
+func callerCanSeeInstanceTotals(ctx context.Context, r *http.Request, accessKey string, claimsMap map[string]interface{}, owner bool) bool {
+	if owner {
+		return true
+	}
+	objectAPI := newObjectLayerFn()
+	if objectAPI == nil {
+		return false
+	}
+	r.Header.Set("prefix", "")
+	r.Header.Set("delimiter", SlashSeparator)
+	allow := func(bucket string) bool {
+		return globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     accessKey,
+			Action:          iampolicy.ListBucketAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", accessKey, claimsMap),
+			IsOwner:         owner,
+			Claims:          claimsMap,
+		})
+	}
+	buckets, err := objectAPI.ListBuckets(ctx)
+	if err != nil {
+		return false
+	}
+	return canSeeInstanceTotals(buckets, allow)
+}
+
 // StorageInfo - web call to gather storage usage statistics.
 func (web *webAPIHandlers) StorageInfo(r *http.Request, args *WebGenericArgs, reply *StorageInfoRep) error {
 	ctx := newWebContext(r, args, "WebStorageInfo")
@@ -164,23 +290,41 @@ func (web *webAPIHandlers) StorageInfo(r *http.Request, args *WebGenericArgs, re
 	if objectAPI == nil {
 		return toJSONError(ctx, errServerNotInitialized)
 	}
-	_, _, authErr := webRequestAuthenticate(r)
+	claims, owner, authErr := webRequestAuthenticate(r)
 	if authErr != nil {
 		return toJSONError(ctx, authErr)
 	}
-	dataUsageInfo, _ := loadDataUsageFromBackend(ctx, objectAPI)
-	reply.Used = dataUsageInfo.ObjectsTotalSize
-	reply.BucketsCount = dataUsageInfo.BucketsCount
-	reply.ObjectsCount = dataUsageInfo.ObjectsTotalCount
 
-	storageInfo, _ := objectAPI.StorageInfo(ctx)
-	for _, disk := range storageInfo.Disks {
-		reply.Total += disk.TotalSpace
-		reply.Free += disk.AvailableSpace
-		if disk.State == madmin.DriveStateOk {
-			reply.DisksOnline++
-		} else {
-			reply.DisksOffline++
+	// Set prefix/delimiter for any s3:prefix / s3:delimiter policy conditionals.
+	r.Header.Set("prefix", "")
+	r.Header.Set("delimiter", SlashSeparator)
+
+	// allow reports whether this caller can list the bucket; usage is always scoped to allowed buckets, no admin/owner shortcut (owner still sees all via the core IAM short-circuit).
+	allow := func(bucket string) bool {
+		return globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.ListBucketAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			Claims:          claims.Map(),
+		})
+	}
+
+	dataUsageInfo, _ := loadDataUsageFromBackend(ctx, objectAPI)
+	reply.Used, reply.ObjectsCount, reply.BucketsCount = scopedUsage(dataUsageInfo.BucketsUsage, allow)
+
+	// Instance-wide hardware totals aren't bucket-scopable: expose only to a caller allowed on every bucket, checked against the live bucket list (not the periodic usage snapshot above).
+	if buckets, err := objectAPI.ListBuckets(ctx); err == nil && canSeeInstanceTotals(buckets, allow) {
+		storageInfo, _ := objectAPI.StorageInfo(ctx)
+		for _, disk := range storageInfo.Disks {
+			reply.Total += disk.TotalSpace
+			reply.Free += disk.AvailableSpace
+			if disk.State == madmin.DriveStateOk {
+				reply.DisksOnline++
+			} else {
+				reply.DisksOffline++
+			}
 		}
 	}
 
@@ -1030,17 +1174,14 @@ func (web *webAPIHandlers) Login(r *http.Request, args *LoginArgs, reply *LoginR
 
 // SetAuthArgs - argument for SetAuth
 type SetAuthArgs struct {
-	CurrentAccessKey string `json:"currentAccessKey"`
 	CurrentSecretKey string `json:"currentSecretKey"`
-	NewAccessKey     string `json:"newAccessKey"`
 	NewSecretKey     string `json:"newSecretKey"`
 }
 
 // SetAuthReply - reply for SetAuth
 type SetAuthReply struct {
-	Token       string            `json:"token"`
-	UIVersion   string            `json:"uiVersion"`
-	PeerErrMsgs map[string]string `json:"peerErrMsgs"`
+	Token     string `json:"token"`
+	UIVersion string `json:"uiVersion"`
 }
 
 // SetAuth - Set accessKey and secretKey credentials.
@@ -2757,19 +2898,6 @@ func webAdminAuth(r *http.Request, action iampolicy.AdminAction) (context.Contex
 	return r.Context(), nil
 }
 
-func policyTargetsBucket(p iampolicy.Policy, bucketName string) bool {
-	arnPrefix := "arn:aws:s3:::" + bucketName
-	for _, st := range p.Statements {
-		for rs := range st.Resources {
-			s := rs.String()
-			if s == arnPrefix || strings.HasPrefix(s, arnPrefix+"/") || strings.HasPrefix(s, arnPrefix+"*") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func splitCSV(s string) []string {
 	if s == "" {
 		return nil
@@ -2785,24 +2913,10 @@ func splitCSV(s string) []string {
 	return out
 }
 
-func anyPolicyTargetsBucket(policies []string, docs map[string]iampolicy.Policy, bucket string) bool {
-	for _, pn := range policies {
-		if doc, ok := docs[pn]; ok && policyTargetsBucket(doc, bucket) {
-			return true
-		}
-	}
-	return false
-}
-
 // Summary of a canned policy.
 type WebPolicySummary struct {
 	Name   string `json:"name"`
 	Policy string `json:"policy"`
-}
-
-// arn:aws:s3:::<bucket>* filtering
-type ListCannedPoliciesArgs struct {
-	BucketName string `json:"bucketName"`
 }
 
 type ListCannedPoliciesRep struct {
@@ -2811,7 +2925,7 @@ type ListCannedPoliciesRep struct {
 }
 
 // List filtered policies
-func (web *webAPIHandlers) ListCannedPolicies(r *http.Request, args *ListCannedPoliciesArgs, reply *ListCannedPoliciesRep) error {
+func (web *webAPIHandlers) ListCannedPolicies(r *http.Request, args *WebGenericArgs, reply *ListCannedPoliciesRep) error {
 	ctx := newWebContext(r, args, "WebListCannedPolicies")
 	if _, err := webAdminAuth(r, iampolicy.ListUserPoliciesAdminAction); err != nil {
 		return toJSONError(ctx, err)
@@ -2824,9 +2938,6 @@ func (web *webAPIHandlers) ListCannedPolicies(r *http.Request, args *ListCannedP
 
 	reply.Policies = []WebPolicySummary{}
 	for name, p := range pols {
-		if args.BucketName != "" && !policyTargetsBucket(p, args.BucketName) {
-			continue
-		}
 		buf, err := json.MarshalIndent(p, "", "  ")
 		if err != nil {
 			continue
@@ -2922,11 +3033,6 @@ type WebUser struct {
 	Policies  []string `json:"policies"`
 }
 
-// List users attached to policy
-type ListUsersArgs struct {
-	BucketName string `json:"bucketName"`
-}
-
 // List reply
 type ListUsersRep struct {
 	UIVersion string    `json:"uiVersion"`
@@ -2934,7 +3040,7 @@ type ListUsersRep struct {
 }
 
 // List all regular users
-func (web *webAPIHandlers) ListIAMUsers(r *http.Request, args *ListUsersArgs, reply *ListUsersRep) error {
+func (web *webAPIHandlers) ListIAMUsers(r *http.Request, args *WebGenericArgs, reply *ListUsersRep) error {
 	ctx := newWebContext(r, args, "WebListIAMUsers")
 	if _, err := webAdminAuth(r, iampolicy.ListUsersAdminAction); err != nil {
 		return toJSONError(ctx, err)
@@ -2944,19 +3050,11 @@ func (web *webAPIHandlers) ListIAMUsers(r *http.Request, args *ListUsersArgs, re
 		return toJSONError(ctx, err)
 	}
 
-	var policyDocs map[string]iampolicy.Policy
-	if args.BucketName != "" {
-		policyDocs, _ = globalIAMSys.ListPolicies()
-	}
-
 	reply.Users = []WebUser{}
 	for ak, info := range users {
 		policies := splitCSV(info.PolicyName)
 		if policies == nil {
 			policies = []string{}
-		}
-		if args.BucketName != "" && !anyPolicyTargetsBucket(policies, policyDocs, args.BucketName) {
-			continue
 		}
 		reply.Users = append(reply.Users, WebUser{
 			AccessKey: ak,

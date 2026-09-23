@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	prometheusMetricsPathLegacy    = "/prometheus/metrics"
 	prometheusMetricsV2ClusterPath = "/v2/metrics/cluster"
 	prometheusMetricsV2NodePath    = "/v2/metrics/node"
 )
@@ -49,13 +48,11 @@ func registerMetricsRouter(router *mux.Router) {
 	authType := strings.ToLower(os.Getenv(EnvPrometheusAuthType))
 	switch prometheusAuthType(authType) {
 	case prometheusPublic:
-		metricsRouter.Handle(prometheusMetricsPathLegacy, metricsHandler())
 		metricsRouter.Handle(prometheusMetricsV2ClusterPath, metricsServerHandler())
 		metricsRouter.Handle(prometheusMetricsV2NodePath, metricsNodeHandler())
 	case prometheusJWT:
 		fallthrough
 	default:
-		metricsRouter.Handle(prometheusMetricsPathLegacy, AuthMiddleware(metricsHandler()))
 		metricsRouter.Handle(prometheusMetricsV2ClusterPath, AuthMiddleware(metricsServerHandler()))
 		metricsRouter.Handle(prometheusMetricsV2NodePath, AuthMiddleware(metricsNodeHandler()))
 	}

@@ -141,7 +141,7 @@ func GetDefaultExpiration(dsecs string) (time.Duration, error) {
 
 func updateClaimsExpiry(dsecs string, claims map[string]interface{}) error {
 	expStr := claims["exp"]
-	if expStr == "" {
+	if expStr == nil || expStr == "" {
 		return ErrTokenExpired
 	}
 
@@ -196,7 +196,7 @@ func (p *JWT) Validate(token, dsecs string) (map[string]interface{}, error) {
 		if err = p.PopulatePublicKey(); err != nil {
 			return nil, err
 		}
-		jwtToken, err = jwtgo.ParseWithClaims(token, &claims, keyFuncCallback)
+		jwtToken, err = jp.ParseWithClaims(token, &claims, keyFuncCallback)
 		if err != nil {
 			return nil, err
 		}
@@ -206,11 +206,53 @@ func (p *JWT) Validate(token, dsecs string) (map[string]interface{}, error) {
 		return nil, ErrTokenExpired
 	}
 
+	// Bind the token and reject ones signed with the same JWKS keys
+	if err = validateClaimsAudIss(claims, p.ClientID, p.DiscoveryDoc.Issuer); err != nil {
+		return nil, err
+	}
+
 	if err = updateClaimsExpiry(dsecs, claims); err != nil {
 		return nil, err
 	}
 
 	return claims, nil
+}
+
+// Rejects tokens whose aud/azp omits client_id
+func validateClaimsAudIss(claims map[string]interface{}, clientID, issuer string) error {
+	if clientID != "" {
+		if !claimContainsString(claims["aud"], clientID) && !claimContainsString(claims["azp"], clientID) {
+			return fmt.Errorf("JWT audience/azp does not include the configured client_id")
+		}
+	}
+	if issuer != "" {
+		iss, _ := claims["iss"].(string)
+		if iss != issuer {
+			return fmt.Errorf("JWT issuer %q does not match the configured issuer", iss)
+		}
+	}
+	return nil
+}
+
+// Check JWT claims per RFC 7519
+func claimContainsString(v interface{}, want string) bool {
+	switch t := v.(type) {
+	case string:
+		return t == want
+	case []interface{}:
+		for _, e := range t {
+			if s, ok := e.(string); ok && s == want {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range t {
+			if s == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ID returns the provider name and authentication type.

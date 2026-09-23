@@ -16,13 +16,13 @@
 #  limitations under the License.
 #
 
-export MINT_ROOT_DIR=${MINT_ROOT_DIR:-/tests}
-source "${MINT_ROOT_DIR}"/source.sh
+export TESTS_ROOT_DIR=${TESTS_ROOT_DIR:-/tests}
+source "${TESTS_ROOT_DIR}"/source.sh
 
 # install testing app packages
-for pkg in "$MINT_ROOT_DIR/build"/*/install.sh; do
+for pkg in "$TESTS_ROOT_DIR/build"/*/install.sh; do
 	echo "Running $pkg"
 	$pkg
 done
 
-"${MINT_ROOT_DIR}"/postinstall.sh
+"${TESTS_ROOT_DIR}"/postinstall.sh

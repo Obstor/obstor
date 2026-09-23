@@ -16,6 +16,6 @@
 #  limitations under the License.
 #
 
-test_run_dir="$MINT_RUN_CORE_DIR/aws-sdk-php"
+test_run_dir="$TESTS_RUN_CORE_DIR/aws-sdk-php"
 $WGET --output-document=- https://getcomposer.org/installer | php -- --install-dir="$test_run_dir"
 php "$test_run_dir/composer.phar" --working-dir="$test_run_dir" install

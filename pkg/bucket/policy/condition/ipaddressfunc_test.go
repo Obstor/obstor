@@ -48,6 +48,28 @@ func TestIPAddressFuncEvaluate(t *testing.T) {
 	}
 }
 
+func TestIPAddressFuncEvaluateInvalidIPNoPanic(t *testing.T) {
+	fn, err := newIPAddressFunc(AWSSourceIP, NewValueSet(NewStringValue("192.168.1.0/24")))
+	if err != nil {
+		t.Fatalf("unexpected error. %v\n", err)
+	}
+	notFn, err := newNotIPAddressFunc(AWSSourceIP, NewValueSet(NewStringValue("192.168.1.0/24")))
+	if err != nil {
+		t.Fatalf("unexpected error. %v\n", err)
+	}
+
+	// A non-IP SourceIP value like forwarded hostnames must not panic.
+	vals := map[string][]string{"SourceIp": {"not-an-ip"}}
+
+	if got := fn.evaluate(vals); got != false {
+		t.Fatalf("IpAddress: invalid source IP must not match, got %v", got)
+	}
+	// An invalid source IP is treated as not-in-range.
+	if got := notFn.evaluate(vals); got != true {
+		t.Fatalf("NotIpAddress: invalid source IP should be not-in-range, got %v", got)
+	}
+}
+
 func TestIPAddressFuncKey(t *testing.T) {
 	case1Function, err := newIPAddressFunc(AWSSourceIP, NewValueSet(NewStringValue("192.168.1.0/24")))
 	if err != nil {

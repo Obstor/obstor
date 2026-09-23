@@ -22,7 +22,60 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
+
+// Forwarding headers X-Real-IP and RFC7239
+var trustedProxies atomic.Pointer[[]*net.IPNet]
+
+// Trusted proxy CIDRs
+func SetTrustedProxies(entries []string) error {
+	nets := make([]*net.IPNet, 0, len(entries))
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if !strings.Contains(e, "/") {
+			if ip := net.ParseIP(e); ip != nil {
+				if ip.To4() != nil {
+					e += "/32"
+				} else {
+					e += "/128"
+				}
+			}
+		}
+		_, ipNet, err := net.ParseCIDR(e)
+		if err != nil {
+			return err
+		}
+		nets = append(nets, ipNet)
+	}
+	trustedProxies.Store(&nets)
+	return nil
+}
+
+// Check if address is in the allowed list
+func peerIsTrustedProxy(remoteAddr string) bool {
+	netsp := trustedProxies.Load()
+	if netsp == nil || len(*netsp) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range *netsp {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
 
 var (
 	// De-facto standard header keys.
@@ -97,7 +150,7 @@ func GetSourceIPFromHeaders(r *http.Request) string {
 		// Match should contain at least two elements if the protocol was
 		// specified in the Forwarded header. The first element will always be
 		// the 'for=' capture, which we ignore. In the case of multiple IP
-		// addresses (for=8.8.8.8, 8.8.4.4, 172.16.1.20 is valid) we only
+		// addresses (for=9.9.9.9, 1.1.1.1, 172.16.1.20 is valid) we only
 		// extract the first, which should be the client IP.
 		if match := forRegex.FindStringSubmatch(fwd); len(match) > 1 {
 			// IPv6 addresses in Forwarded headers are quoted-strings. We strip
@@ -112,12 +165,13 @@ func GetSourceIPFromHeaders(r *http.Request) string {
 // GetSourceIP retrieves the IP from the request headers
 // and falls back to r.RemoteAddr when necessary.
 func GetSourceIP(r *http.Request) string {
-	addr := GetSourceIPFromHeaders(r)
-	if addr != "" {
-		return addr
+	if peerIsTrustedProxy(r.RemoteAddr) {
+		if addr := GetSourceIPFromHeaders(r); addr != "" {
+			return addr
+		}
 	}
 
 	// Default to remote address if headers not set.
-	addr, _, _ = net.SplitHostPort(r.RemoteAddr)
+	addr, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return addr
 }

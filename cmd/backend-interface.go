@@ -21,15 +21,10 @@ import (
 	"github.com/obstor/obstor/pkg/auth"
 )
 
-// BackendObstorSysTmp prefix is used in Azure/GCS backend for save metadata sent by Initialize Multipart Upload API.
 const (
-	BackendObstorSysTmp = "obstor.sys.tmp/"
-	AzureBackend        = "azure"
-	GCSBackend          = "gcs"
-	HDFSBackend         = "hdfs"
-	NASBackend          = "nas"
-	S3Backend           = "s3"
-	SFTPBackend         = "sftp"
+	NASBackend  = "nas"
+	S3Backend   = "s3"
+	SFTPBackend = "sftp"
 )
 
 // Backend represents a storage backend.

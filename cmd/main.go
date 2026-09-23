@@ -30,13 +30,6 @@ import (
 
 // GlobalFlags - global flags for obstor.
 var GlobalFlags = []cli.Flag{
-	// Deprecated flag, so its hidden now - existing deployments will keep working.
-	cli.StringFlag{
-		Name:   "config-dir, C",
-		Value:  defaultConfigDir.Get(),
-		Usage:  "[DEPRECATED] path to legacy configuration directory",
-		Hidden: true,
-	},
 	cli.StringFlag{
 		Name:  "certs-dir, S",
 		Value: defaultCertsDir.Get(),

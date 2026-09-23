@@ -5,11 +5,11 @@ This directory serves as the location for Testing tests using `obstor-go`.  Top 
 New tests are added in functional tests of obstor-go.  Please check https://github.com/obstor/obstor-go
 
 ## Running tests manually
-- Set environment variables `MINT_DATA_DIR`, `MINT_MODE`, `SERVER_ENDPOINT`, `ACCESS_KEY`, `SECRET_KEY`, `SERVER_REGION`, `ENABLE_HTTPS` and `RUN_ON_FAIL`
+- Set environment variables `TESTS_DATA_DIR`, `TESTS_MODE`, `SERVER_ENDPOINT`, `ACCESS_KEY`, `SECRET_KEY`, `SERVER_REGION`, `ENABLE_HTTPS` and `RUN_ON_FAIL`
 - Call `run.sh` with output log file and error log file. for example
 ```bash
-export MINT_DATA_DIR=~/my-mint-dir
-export MINT_MODE=core
+export TESTS_DATA_DIR=~/my-tests-dir
+export TESTS_MODE=core
 export SERVER_ENDPOINT="demo.obstor.net:9000"
 export ACCESS_KEY="Q3AM3UQ867SPQQA43P2F"
 export SECRET_KEY="zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
