@@ -56,7 +56,7 @@ func TestCrossDeviceMountPaths(t *testing.T) {
 		mp := []mountInfo{
 			{"/dev/2", "/path/to/1/2", "type2", []string{"flags"}, "2", "2"},
 		}
-		msg := fmt.Sprintf("Cross-device mounts detected on path (/path/to/1) at following locations %s. Export path should not have any sub-mounts, refusing to start.", mp)
+		msg := fmt.Sprintf("cross-device mounts detected on path (/path/to/1) at following locations %s; export path should not have any sub-mounts, refusing to start", mp)
 		if err.Error() != msg {
 			t.Fatalf("Expected msg %s, got %s", msg, err)
 		}
@@ -112,7 +112,7 @@ func TestCrossDeviceMount(t *testing.T) {
 		mp := []mountInfo{
 			{"/dev/2", "/path/to/1/2", "type2", []string{"flags"}, "2", "2"},
 		}
-		msg := fmt.Sprintf("Cross-device mounts detected on path (/path/to/1) at following locations %s. Export path should not have any sub-mounts, refusing to start.", mp)
+		msg := fmt.Sprintf("cross-device mounts detected on path (/path/to/1) at following locations %s; export path should not have any sub-mounts, refusing to start", mp)
 		if err.Error() != msg {
 			t.Fatalf("Expected msg %s, got %s", msg, err)
 		}

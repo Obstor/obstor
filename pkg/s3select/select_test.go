@@ -67,6 +67,30 @@ func TestJSONQueries(t *testing.T) {
 		withJSON   string // Override JSON input
 	}{
 		{
+			name:       "from-scalar-string",
+			query:      `SELECT * FROM S3Object[*].value`,
+			withJSON:   `{"value":"hello"}`,
+			wantResult: `{"_1":"hello"}`,
+		},
+		{
+			name:       "from-scalar-number",
+			query:      `SELECT * FROM S3Object[*].value`,
+			withJSON:   `{"value":42}`,
+			wantResult: `{"_1":42}`,
+		},
+		{
+			name:       "from-scalar-bool",
+			query:      `SELECT * FROM S3Object[*].value`,
+			withJSON:   `{"value":true}`,
+			wantResult: `{"_1":true}`,
+		},
+		{
+			name:       "from-scalar-null",
+			query:      `SELECT * FROM S3Object[*].value`,
+			withJSON:   `{"value":null}`,
+			wantResult: `{"_1":null}`,
+		},
+		{
 			name:       "select-in-array-full",
 			query:      `SELECT * from s3object s WHERE 'bar' IN s.synonyms[*]`,
 			wantResult: `{"id":0,"title":"Test Record","desc":"Some text","synonyms":["foo","bar","whatever"]}`,

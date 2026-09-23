@@ -107,15 +107,20 @@ func (key *JWKS) DecodePublicKey() (crypto.PublicKey, error) {
 			return nil, errMalformedJWKECKey
 		}
 
-		var x, y big.Int
-		x.SetBytes(xbuf)
-		y.SetBytes(ybuf)
-
-		return &ecdsa.PublicKey{
-			Curve: curve,
-			X:     &x,
-			Y:     &y,
-		}, nil
+		// JWK coordinates are fixed-width, unsigned field elements
+		coordinateSize := (curve.Params().BitSize + 7) / 8
+		if len(xbuf) != coordinateSize || len(ybuf) != coordinateSize {
+			return nil, errMalformedJWKECKey
+		}
+		point := make([]byte, 1, 1+2*coordinateSize)
+		point[0] = 4 // SEC 1 uncompressed
+		point = append(point, xbuf...)
+		point = append(point, ybuf...)
+		publicKey, err := ecdsa.ParseUncompressedPublicKey(curve, point)
+		if err != nil {
+			return nil, errMalformedJWKECKey
+		}
+		return publicKey, nil
 	default:
 		return nil, fmt.Errorf("unknown JWK key type %s", key.Kty)
 	}

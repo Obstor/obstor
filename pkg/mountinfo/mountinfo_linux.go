@@ -106,7 +106,7 @@ func (mts mountInfos) checkCrossMounts(path string) error {
 			}
 		}
 	}
-	msg := `Cross-device mounts detected on path (%s) at following locations %s. Export path should not have any sub-mounts, refusing to start.`
+	msg := `cross-device mounts detected on path (%s) at following locations %s; export path should not have any sub-mounts, refusing to start`
 	if len(crossMounts) > 0 {
 		// if paths didn't match then we do have cross-device mount.
 		return fmt.Errorf(msg, path, crossMounts)

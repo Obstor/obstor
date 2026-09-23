@@ -215,6 +215,18 @@ function DivergingBars({
   const barWidth = (width - barGap * (n - 1)) / n;
   const mid = height / 2;
   const half = mid - 4;
+
+  // One path per direction rather than a node per bucket
+  const barPath = (values: number[], dir: "up" | "down") =>
+    values
+      .map((v, i) => {
+        const h = (v / domain) * half;
+        if (h <= 0) return "";
+        const x = i * (barWidth + barGap);
+        return `M${x} ${dir === "up" ? mid - h : mid}h${barWidth}v${h}h${-barWidth}Z`;
+      })
+      .join("");
+
   return (
     <svg
       aria-hidden="true"
@@ -224,18 +236,10 @@ function DivergingBars({
     >
       <line x1={0} y1={mid} x2={width} y2={mid} stroke="var(--color-zinc-800)" strokeWidth={1} />
       {mode !== "empty" &&
-        up.map((v, i) => {
-          const upH = (v / domain) * half;
-          const downH = (down[i] / domain) * half;
-          const x = i * (barWidth + barGap);
-          return (
-            // biome-ignore lint/suspicious/noArrayIndexKey
-            <g key={i}>
-              <rect x={x} y={mid - upH} width={barWidth} height={upH} fill={upColor} />
-              <rect x={x} y={mid} width={barWidth} height={downH} fill={downColor} />
-            </g>
-          );
-        })}
+        [
+          { d: barPath(up, "up"), color: upColor },
+          { d: barPath(down, "down"), color: downColor },
+        ].map((b) => (b.d ? <path key={b.color} d={b.d} fill={b.color} /> : null))}
     </svg>
   );
 }
@@ -279,24 +283,10 @@ function LineChart({
         series.map((s, si) => {
           if (s.data.every((v) => v <= 0)) return null;
           if (mode === "trace") {
-            return (
-              <g key={s.color}>
-                {s.data.map((v, i) => {
-                  if (v <= 0) return null;
-                  return (
-                    <line
-                      key={x(i)}
-                      x1={x(i) + si * 2}
-                      y1={base}
-                      x2={x(i) + si * 2}
-                      y2={base - 6}
-                      stroke={s.color}
-                      strokeWidth={1.5}
-                    />
-                  );
-                })}
-              </g>
-            );
+            const ticks = s.data
+              .map((v, i) => (v > 0 ? `M${x(i) + si * 2} ${base}V${base - 6}` : ""))
+              .join("");
+            return <path key={s.color} d={ticks} fill="none" stroke={s.color} strokeWidth={1.5} />;
           }
           return (
             <polyline

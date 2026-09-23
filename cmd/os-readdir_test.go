@@ -72,6 +72,7 @@ func mustSetupDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("Unable to setup directory, %s", err)
 	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
 }
 
@@ -89,8 +90,6 @@ func setupTestReadDirFiles(t *testing.T) (testResults []result) {
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("file-%d", i)
 		if err := os.WriteFile(filepath.Join(dir, name), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
 			t.Fatalf("Unable to create file, %s", err)
 		}
 		entries = append(entries, name)
@@ -114,8 +113,6 @@ func setupTestReadDirGeneric(t *testing.T) (testResults []result) {
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("file-%d", i)
 		if err := os.WriteFile(filepath.Join(dir, "mydir", name), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
 			t.Fatalf("Unable to write file, %s", err)
 		}
 	}
@@ -139,8 +136,6 @@ func setupTestReadDirSymlink(t *testing.T) (testResults []result) {
 		name1 := fmt.Sprintf("file-%d", i)
 		name2 := fmt.Sprintf("file-%d", i+10)
 		if err := os.WriteFile(filepath.Join(dir, name1), []byte{}, os.ModePerm); err != nil {
-			// For cleanup, its required to add these entries into test results.
-			testResults = append(testResults, result{dir, entries})
 			t.Fatalf("Unable to create a file, %s", err)
 		}
 		// Symlink will not be added to entries.
@@ -183,13 +178,6 @@ func checkResult(expected []string, got []string) bool {
 	return true
 }
 
-// teardown - cleans up test directories.
-func teardown(testResults []result) {
-	for _, r := range testResults {
-		os.RemoveAll(r.dir)
-	}
-}
-
 // TestReadDir - test function to run various readDir() tests.
 func TestReadDir(t *testing.T) {
 	var testResults []result
@@ -202,9 +190,6 @@ func TestReadDir(t *testing.T) {
 	testResults = append(testResults, setupTestReadDirGeneric(t)...)
 	// Setup and capture test results for directory with files and symlink.
 	testResults = append(testResults, setupTestReadDirSymlink(t)...)
-
-	// Remove all dirs once tests are over.
-	defer teardown(testResults)
 
 	// Validate all the results.
 	for _, r := range testResults {

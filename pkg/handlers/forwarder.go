@@ -52,12 +52,21 @@ func NewForwarder(f *Forwarder) *Forwarder {
 
 // ServeHTTP forwards HTTP traffic using the configured transport
 func (f *Forwarder) ServeHTTP(w http.ResponseWriter, inReq *http.Request) {
-	outReq := new(http.Request)
-	*outReq = *inReq // includes shallow copies of maps, but we handle this in Director
-
 	revproxy := httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			f.modifyRequest(req, inReq.URL)
+		Rewrite: func(req *httputil.ProxyRequest) {
+			// Preserve forwarding headers for node proxies
+			headers := req.In.Header.Clone()
+			for _, connection := range headers.Values("Connection") {
+				for _, name := range strings.Split(connection, ",") {
+					headers.Del(strings.TrimSpace(name))
+				}
+			}
+			for _, name := range []string{forwarded, xForwardedFor, xForwardedHost, xForwardedProto} {
+				if values, ok := headers[name]; ok {
+					req.Out.Header[name] = values
+				}
+			}
+			f.modifyRequest(req.Out, req.In)
 		},
 		Transport:     f.RoundTripper,
 		FlushInterval: defaultFlushInterval,
@@ -68,7 +77,7 @@ func (f *Forwarder) ServeHTTP(w http.ResponseWriter, inReq *http.Request) {
 		revproxy.ErrorHandler = f.ErrorHandler
 	}
 
-	revproxy.ServeHTTP(w, outReq)
+	revproxy.ServeHTTP(w, inReq)
 }
 
 // customErrHandler is originally implemented to avoid having the following error
@@ -106,12 +115,10 @@ func copyURL(i *url.URL) *url.URL {
 }
 
 // Modify the request to handle the target URL
-func (f *Forwarder) modifyRequest(outReq *http.Request, target *url.URL) {
-	outReq.URL = copyURL(outReq.URL)
-	outReq.URL.Scheme = target.Scheme
-	outReq.URL.Host = target.Host
+func (f *Forwarder) modifyRequest(outReq, inReq *http.Request) {
+	outReq.URL = copyURL(inReq.URL)
 
-	u := f.getURLFromRequest(outReq)
+	u := f.getURLFromRequest(inReq)
 
 	outReq.URL.Path = u.Path
 	outReq.URL.RawPath = u.RawPath
@@ -120,7 +127,7 @@ func (f *Forwarder) modifyRequest(outReq *http.Request, target *url.URL) {
 
 	// Do not pass client Host header unless requested.
 	if !f.PassHost {
-		outReq.Host = target.Host
+		outReq.Host = inReq.URL.Host
 	}
 
 	// TODO: only supports HTTP 1.1 for now.
@@ -148,9 +155,16 @@ func ipv6fix(clientIP string) string {
 
 func (rw *headerRewriter) Rewrite(req *http.Request) {
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		clientIP = ipv6fix(clientIP)
+		prior, ok := req.Header[xForwardedFor]
+		if !ok || prior != nil {
+			forwardedIP := clientIP
+			if len(prior) > 0 {
+				forwardedIP = strings.Join(prior, ", ") + ", " + clientIP
+			}
+			req.Header.Set(xForwardedFor, forwardedIP)
+		}
 		if req.Header.Get(xRealIP) == "" {
-			req.Header.Set(xRealIP, clientIP)
+			req.Header.Set(xRealIP, ipv6fix(clientIP))
 		}
 	}
 

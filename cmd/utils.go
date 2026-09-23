@@ -49,7 +49,6 @@ import (
 	"github.com/obstor/obstor/pkg/certs"
 	"github.com/obstor/obstor/pkg/handlers"
 	"github.com/obstor/obstor/pkg/madmin"
-	"golang.org/x/net/http2"
 )
 
 const (
@@ -538,18 +537,14 @@ func newCustomHTTPTransportWithHTTP2(tlsConfig *tls.Config, dialTimeout time.Dur
 	}
 
 	if tlsConfig != nil {
-		trhttp2, _ := http2.ConfigureTransports(tr)
-		if trhttp2 != nil {
-			// ReadIdleTimeout is the timeout after which a health check using ping
-			// frame will be carried out if no frame is received on the
-			// connection. 5 minutes is sufficient time for any idle connection.
-			trhttp2.ReadIdleTimeout = 5 * time.Minute
-			// PingTimeout is the timeout after which the connection will be closed
-			// if a response to Ping is not received.
-			trhttp2.PingTimeout = dialTimeout
-			// DisableCompression, if true, prevents the Transport from
-			// requesting compression with an "Accept-Encoding: gzip"
-			trhttp2.DisableCompression = true
+		tr.Protocols = new(http.Protocols)
+		tr.Protocols.SetHTTP1(true)
+		tr.Protocols.SetHTTP2(true)
+		tr.HTTP2 = &http.HTTP2Config{
+			// Check connections that havent received frames for 5 mins
+			SendPingTimeout: 5 * time.Minute,
+			// Close the connection if the ping is not answered in time
+			PingTimeout: dialTimeout,
 		}
 	}
 

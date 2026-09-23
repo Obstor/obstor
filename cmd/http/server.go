@@ -174,10 +174,9 @@ func NewServer(addrs []string, handler http.Handler, getCert certs.GetCertificat
 	var tlsConfig *tls.Config
 	if getCert != nil {
 		tlsConfig = &tls.Config{
-			PreferServerCipherSuites: true,
-			MinVersion:               tls.VersionTLS12,
-			NextProtos:               []string{"http/1.1", "h2"},
-			GetCertificate:           getCert,
+			MinVersion:     tls.VersionTLS12,
+			NextProtos:     []string{"http/1.1", "h2"},
+			GetCertificate: getCert,
 		}
 		if secureCiphers || fips.Enabled() {
 			tlsConfig.CipherSuites = fips.CipherSuitesTLS()

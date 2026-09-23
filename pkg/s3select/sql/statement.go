@@ -186,6 +186,7 @@ func (e *SelectStatement) EvalFrom(format string, input Record) ([]*Record, erro
 			if err != nil {
 				return nil, err
 			}
+			return []*Record{&input}, nil
 		}
 	}
 	return nil, errDataSource(errors.New("unexpected non JSON input"))

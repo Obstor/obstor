@@ -19,16 +19,65 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestCustomHTTPTransportWithHTTP2(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		tls   bool
+		http2 bool
+	}{
+		{name: "http2", tls: true, http2: true},
+		{name: "http1-fallback", tls: true},
+		{name: "plaintext-http1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("Accept-Encoding"); got != "" {
+					t.Errorf("transport requested compression: %q", got)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			server.EnableHTTP2 = test.http2
+			var tlsConfig *tls.Config
+			if test.tls {
+				server.StartTLS()
+				tlsConfig = server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+			} else {
+				server.Start()
+			}
+			defer server.Close()
+
+			transport := newCustomHTTPTransportWithHTTP2(tlsConfig, time.Second)()
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+			response, err := client.Get(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			wantProtocol := 1
+			if test.http2 {
+				wantProtocol = 2
+			}
+			if response.ProtoMajor != wantProtocol {
+				t.Fatalf("negotiated %s, want HTTP/%d", response.Proto, wantProtocol)
+			}
+		})
+	}
+}
 
 // Tests maximum object size.
 func TestSafeDisplayNameStripsQuoteAndBackslash(t *testing.T) {

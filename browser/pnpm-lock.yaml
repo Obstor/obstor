@@ -22,8 +22,8 @@ importers:
         specifier: ^2.5.14
         version: 2.5.14
       '@iconify/json':
-        specifier: ^2.2.530
-        version: 2.2.530
+        specifier: ^2.2.531
+        version: 2.2.531
       '@iconify/tailwind4':
         specifier: ^1.2.3
         version: 1.2.3(tailwindcss@4.3.3)
@@ -121,8 +121,8 @@ packages:
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
 
-  '@iconify/json@2.2.530':
-    resolution: {integrity: sha512-BW//xItEASwJNDEqhUMh6XTWnRTe/zV3V6wDMyMMy7WHHaN+14HKPkzU6lV/1Cz52wb+67Z8S9S7XahSVmjiPQ==}
+  '@iconify/json@2.2.531':
+    resolution: {integrity: sha512-l6gaD4Pde01hDbHDjPJUTr+8oZU5qW+ZzzsJflFTnHx7hpl+ata2jlMLkApM/aljISjFWUYYxnaLoFHkCLn3QA==}
 
   '@iconify/tailwind4@1.2.3':
     resolution: {integrity: sha512-z8SKiMHRASJKF/IY//87MF88lcB7ulxh8vlhQXXLWsBkNtOh6ese9R41MyGpQeqXdRvQVt+/fX2glQtHFjQ+MA==}
@@ -935,7 +935,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@iconify/json@2.2.530':
+  '@iconify/json@2.2.531':
     dependencies:
       '@iconify/types': 2.0.0
       pathe: 2.0.3
