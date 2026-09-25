@@ -58,7 +58,7 @@ jobs:
           sudo sysctl net.ipv6.conf.default.disable_ipv6=0
           sudo apt update && sudo apt install -y shellcheck
           go build -trimpath --ldflags="-s -w" -o obstor
-          go test --timeout 50m ./cmd/http/... ./cmd/backend/... ./cmd/config/... ./cmd/crypto/... ./cmd/jwt/... ./cmd/rest/... ./pkg/...
+          go test --timeout 50m ./cmd/http/... ./cmd/backend/... ./cmd/config/... ./cmd/crypto/... ./cmd/jwt/... ./cmd/rest/... ./pkg/... ./dockerscripts/...
           cd browser && pnpm install && pnpm run format && cd ..
           bash -c 'shopt -s globstar; shellcheck -S warning -x tests/**/*.sh'
 

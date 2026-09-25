@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useReducer, useState } from "react";
 import {
-  addUserAction,
   type BucketSettings,
   createBucketWithSettingsAction,
   getBucketSettingsAction,
@@ -17,7 +16,6 @@ import { Dialog } from "./Dialog";
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
   editBucket?: string | null;
 }
 
@@ -32,6 +30,11 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+// Cache current bucket name for other modal tabs
+function resolvePolicyTemplate(value: string, bucketName: string): string {
+  return value.split("BUCKET_NAME").join(bucketName || "BUCKET_NAME");
+}
 
 const DEFAULT_POLICY_TEMPLATE = (bucketName: string): PolicyRow => ({
   origin: "new",
@@ -311,15 +314,20 @@ function PoliciesAccordion({
   isEdit: boolean;
 }) {
   const addPolicy = () => {
+    const templateBucket = isEdit ? settings.name : "";
     const base =
       settings.policies.length === 0
-        ? DEFAULT_POLICY_TEMPLATE(settings.name)
-        : READONLY_POLICY_TEMPLATE(settings.name);
+        ? DEFAULT_POLICY_TEMPLATE(templateBucket)
+        : READONLY_POLICY_TEMPLATE(templateBucket);
     // Check if name is available
-    const existing = new Set(settings.policies.map((p) => p.name));
+    const existing = new Set(
+      settings.policies.map((p) =>
+        p.origin === "new" ? resolvePolicyTemplate(p.name, settings.name) : p.name,
+      ),
+    );
     let name = base.name;
     let i = 2;
-    while (existing.has(name)) {
+    while (existing.has(resolvePolicyTemplate(name, settings.name))) {
       name = `${base.name}-${i++}`;
     }
     onChange({ policies: [...settings.policies, { ...base, name }] });
@@ -410,6 +418,7 @@ function PoliciesAccordion({
               <PolicyEditor
                 key={key}
                 policy={p}
+                bucketName={settings.name}
                 onChange={(patch) => updatePolicy(idx, patch)}
                 onRemove={() => removePolicy(idx)}
               />
@@ -469,14 +478,20 @@ function PoliciesAccordion({
 
 function PolicyEditor({
   policy,
+  bucketName,
   onChange,
   onRemove,
 }: {
   policy: PolicyRow;
+  bucketName: string;
   onChange: (patch: Partial<NamedPolicy>) => void;
   onRemove: () => void;
 }) {
   const shared = policy.origin === "shared";
+  const name =
+    policy.origin === "new" ? resolvePolicyTemplate(policy.name, bucketName) : policy.name;
+  const document =
+    policy.origin === "new" ? resolvePolicyTemplate(policy.policy, bucketName) : policy.policy;
   const format = () => {
     try {
       const formatted = JSON.stringify(JSON.parse(policy.policy), null, 2);
@@ -491,7 +506,7 @@ function PolicyEditor({
       <div className="mb-2 flex items-center gap-2">
         <input
           type="text"
-          value={policy.name}
+          value={name}
           disabled={policy.origin !== "new"}
           title={
             policy.origin === "exclusive" ? "Rename this policy on the Access page." : undefined
@@ -531,7 +546,7 @@ function PolicyEditor({
         </p>
       ) : (
         <textarea
-          value={policy.policy}
+          value={document}
           onChange={(e) => onChange({ policy: e.target.value })}
           rows={10}
           spellCheck={false}
@@ -564,7 +579,12 @@ function UsersAccordion({
   );
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const availablePolicies = settings.policies.map((p) => p.name).filter(Boolean);
+  const availablePolicies = settings.policies
+    .filter((p) => p.name)
+    .map((p) => ({
+      name: p.name,
+      label: p.origin === "new" ? resolvePolicyTemplate(p.name, settings.name) : p.name,
+    }));
 
   const removeUser = (user: IAMUser) => {
     // Not written yet, skip detaching on save
@@ -704,7 +724,7 @@ function UsersAccordion({
                     Member of
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {availablePolicies.map((pn) => {
+                    {availablePolicies.map(({ name: pn, label }) => {
                       const checked = u.policies.includes(pn);
                       return (
                         <button
@@ -722,7 +742,7 @@ function UsersAccordion({
                               : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20 hover:text-stone-400"
                           }`}
                         >
-                          {pn}
+                          {label}
                         </button>
                       );
                     })}
@@ -734,7 +754,6 @@ function UsersAccordion({
 
           {showAdd ? (
             <AddUserForm
-              isEdit={isEdit}
               availablePolicies={availablePolicies}
               onCancel={() => setShowAdd(false)}
               onCreated={(user, creds) => {
@@ -810,14 +829,12 @@ function genSecretKey(): string {
 }
 
 function AddUserForm({
-  isEdit,
   availablePolicies,
   onCancel,
   onCreated,
   onError,
 }: {
-  isEdit: boolean;
-  availablePolicies: string[];
+  availablePolicies: { name: string; label: string }[];
   onCancel: () => void;
   onCreated: (user: IAMUser, creds: { accessKey: string; secretKey: string }) => void;
   onError: (err: string) => void;
@@ -826,44 +843,21 @@ function AddUserForm({
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [policies, setPolicies] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async () => {
+  const submit = () => {
     if (policies.length === 0) {
       onError("Select at least one policy for the user.");
       return;
     }
-
-    // Check user create input syntax
-    if (!isEdit) {
-      const ak = autoGen ? genAccessKey() : accessKey.trim();
-      const sk = autoGen ? genSecretKey() : secretKey.trim();
-      if (!ak || !sk) {
-        onError("Access key and secret key are required.");
-        return;
-      }
-      onCreated(
-        { accessKey: ak, status: "enabled", policies, pendingSecretKey: sk },
-        { accessKey: ak, secretKey: sk },
-      );
-      return;
-    }
-
-    // Edit user on backened
-    setBusy(true);
-    const res = await addUserAction(
-      autoGen ? "" : accessKey,
-      autoGen ? "" : secretKey,
-      policies.join(","),
-    );
-    setBusy(false);
-    if ("error" in res) {
-      onError(res.error);
+    const ak = autoGen ? genAccessKey() : accessKey.trim();
+    const sk = autoGen ? genSecretKey() : secretKey.trim();
+    if (!ak || !sk) {
+      onError("Access key and secret key are required.");
       return;
     }
     onCreated(
-      { accessKey: res.accessKey, status: "enabled", policies },
-      { accessKey: res.accessKey, secretKey: res.secretKey },
+      { accessKey: ak, status: "enabled", policies, pendingSecretKey: sk },
+      { accessKey: ak, secretKey: sk },
     );
   };
 
@@ -923,7 +917,7 @@ function AddUserForm({
           </p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            {availablePolicies.map((pn) => {
+            {availablePolicies.map(({ name: pn, label }) => {
               const checked = policies.includes(pn);
               return (
                 <button
@@ -938,7 +932,7 @@ function AddUserForm({
                       : "border-amber-200/10 bg-surface text-stone-600 hover:border-amber-200/20 hover:text-stone-400"
                   }`}
                 >
-                  {pn}
+                  {label}
                 </button>
               );
             })}
@@ -950,25 +944,21 @@ function AddUserForm({
         <button
           type="button"
           onClick={submit}
-          disabled={busy}
-          className="flex-1 rounded-md bg-amber-500 px-3 py-2 font-body font-medium text-black text-xs transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 rounded-md bg-amber-500 px-3 py-2 font-body font-medium text-black text-xs transition-colors hover:bg-amber-400"
         >
-          {busy ? "Creating..." : "Create User"}
+          Create User
         </button>
         <button
           type="button"
           onClick={onCancel}
-          disabled={busy}
-          className="rounded-md border border-amber-200/5 px-3 py-2 font-body text-stone-600 text-xs transition-colors hover:bg-surface-overlay disabled:opacity-50"
+          className="rounded-md border border-amber-200/5 px-3 py-2 font-body text-stone-600 text-xs transition-colors hover:bg-surface-overlay"
         >
           Cancel
         </button>
       </div>
-      {!isEdit && (
-        <p className="font-body text-[11px] text-stone-600">
-          User will be created when you save the bucket.
-        </p>
-      )}
+      <p className="font-body text-[11px] text-stone-600">
+        User will be created when you save the bucket.
+      </p>
     </div>
   );
 }
@@ -1398,7 +1388,7 @@ const INITIAL_STATE: ModalState = {
 };
 
 // Bucket Modal
-export function BucketModal({ open, onClose, onSuccess, editBucket }: Props) {
+export function BucketModal({ open, onClose, editBucket }: Props) {
   const isEdit = !!editBucket;
   const [state, dispatch] = useReducer(modalReducer, INITIAL_STATE);
   const { tab, settings, loading, saving, error } = state;
@@ -1452,7 +1442,6 @@ export function BucketModal({ open, onClose, onSuccess, editBucket }: Props) {
       if (result && "error" in result) {
         dispatch({ type: "SET_ERROR", error: result.error });
       } else {
-        onSuccess();
         onClose();
       }
     } catch (err) {

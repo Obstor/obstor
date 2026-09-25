@@ -9,13 +9,13 @@
     "format": "biome check --write; tsc --noEmit"
   },
   "dependencies": {
-    "next": "^16.3.5",
+    "next": "^16.3.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
-    "@iconify/json": "^2.2.531",
+    "@iconify/json": "^2.2.533",
     "@iconify/tailwind4": "^1.2.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.2",

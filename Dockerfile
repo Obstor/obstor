@@ -17,7 +17,12 @@ ARG COMMIT=unknown
 
 # Build source
 COPY . .
-RUN go build -trimpath -ldflags "-s -w -X github.com/obstor/obstor/cmd.Version=${VERSION} -X github.com/obstor/obstor/cmd.ShortCommitID=${COMMIT}" -o /go/bin/obstor .
+RUN SHORT_COMMIT="$(printf '%.12s' "$COMMIT")" && \
+    go build -trimpath -ldflags "-s -w \
+    -X github.com/obstor/obstor/cmd.Version=${VERSION} \
+    -X github.com/obstor/obstor/cmd.ReleaseTag=${VERSION} \
+    -X github.com/obstor/obstor/cmd.CommitID=${COMMIT} \
+    -X github.com/obstor/obstor/cmd.ShortCommitID=${SHORT_COMMIT}" -o /go/bin/obstor .
 
 FROM node:26-alpine AS node-builder
 

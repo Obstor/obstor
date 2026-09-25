@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BucketModal } from "./BucketModal";
 
 export function CreateBucketButton() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   return (
@@ -18,12 +16,7 @@ export function CreateBucketButton() {
         <span className="icon-[tabler--plus] block text-[13px]" />
         Create bucket
       </button>
-      <BucketModal
-        open={open}
-        onClose={() => setOpen(false)}
-        onSuccess={() => router.refresh()}
-        editBucket={null}
-      />
+      <BucketModal open={open} onClose={() => setOpen(false)} editBucket={null} />
     </>
   );
 }

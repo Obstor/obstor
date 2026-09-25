@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { deleteBucketAction, logoutAction } from "@/lib/actions";
 import { safeDisplayName } from "@/lib/safe-name";
@@ -26,7 +26,6 @@ export function Sidebar({
   access,
 }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
   const firstSegment = decodeURIComponent(pathname.split("/")[1] || "");
   const isAccess = firstSegment === "access";
   const activeBucket = isAccess ? "" : firstSegment;
@@ -36,13 +35,12 @@ export function Sidebar({
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
 
+  // Layout state survives the post-delete redirect, so close once the bucket is gone
+  if (deleteConfirm && !buckets.some((b) => b.name === deleteConfirm)) setDeleteConfirm(null);
+
   const attentionTitle = `${access.noPolicy} accounts with no direct policy`;
 
   const filtered = buckets.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()));
-
-  const handleModalSuccess = () => {
-    router.refresh();
-  };
 
   const openCreate = () => {
     setEditBucket(null);
@@ -60,12 +58,7 @@ export function Sidebar({
     setDeleteError("");
     const res = await deleteBucketAction(bucketName);
     // Redirects on success, so reaching here means it failed.
-    if (res && "error" in res) {
-      setDeleteError(res.error);
-      return;
-    }
-    setDeleteConfirm(null);
-    router.refresh();
+    setDeleteError(res.error);
   };
 
   return (
@@ -241,12 +234,7 @@ export function Sidebar({
       </aside>
 
       {/* Bucket Create/Edit Modal */}
-      <BucketModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSuccess={handleModalSuccess}
-        editBucket={editBucket}
-      />
+      <BucketModal open={modalOpen} onClose={() => setModalOpen(false)} editBucket={editBucket} />
 
       {/* Delete Confirmation */}
       {deleteConfirm && (

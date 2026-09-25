@@ -123,11 +123,11 @@ start_frontend() {
             DEFAULT_ENDPOINT="http://127.0.0.1:${API_PORT}"
         fi
 
-        PORT=3000 \
+        env PORT=3000 \
         HOSTNAME=127.0.0.1 \
-        ${CA_CERT:+NODE_EXTRA_CA_CERTS=$CA_CERT} \
-        OBSTOR_ENDPOINT=${OBSTOR_ENDPOINT:-${DEFAULT_ENDPOINT}} \
-        OBSTOR_HOST=${OBSTOR_HOST:-${DEFAULT_HOST}} \
+        ${CA_CERT:+"NODE_EXTRA_CA_CERTS=$CA_CERT"} \
+        "OBSTOR_ENDPOINT=${OBSTOR_ENDPOINT:-${DEFAULT_ENDPOINT}}" \
+        "OBSTOR_HOST=${OBSTOR_HOST:-${DEFAULT_HOST}}" \
         node /opt/frontend/server.js > /dev/null &
     fi
 }

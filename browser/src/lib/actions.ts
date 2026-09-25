@@ -107,6 +107,8 @@ export async function deleteBucketAction(bucketName: string) {
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to delete bucket" };
   }
+
+  revalidatePath("/", "layout");
   redirect("/");
 }
 
@@ -217,13 +219,13 @@ export async function createBucketWithSettingsAction(
   try {
     await rpc("MakeBucket", { bucketName: settings.name });
     await applyBucketSettings(settings);
-    revalidatePath("/");
-    revalidatePath(`/${settings.name}`);
     return { success: true, bucketName: settings.name };
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Failed to create bucket",
     };
+  } finally {
+    revalidatePath("/", "layout");
   }
 }
 
@@ -232,13 +234,13 @@ export async function updateBucketSettingsAction(
 ): Promise<{ success: true } | { error: string }> {
   try {
     await applyBucketSettings(settings);
-    revalidatePath("/");
-    revalidatePath(`/${settings.name}`);
     return { success: true };
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Failed to update bucket settings",
     };
+  } finally {
+    revalidatePath("/", "layout");
   }
 }
 
@@ -300,6 +302,9 @@ async function applyBucketSettings(settings: BucketSettings) {
       secretKey: user.pendingSecretKey,
       policy: "", // Policies attached later
     });
+    if (user.status === "disabled") {
+      await rpc("SetIAMUserStatus", { accessKey: user.accessKey, enabled: false });
+    }
   }
 
   // Attach policies
@@ -365,23 +370,6 @@ async function listUsers(): Promise<IAMUser[]> {
     return (res.users || []).map((u) => ({ ...u, policies: u.policies ?? [] }));
   } catch (err) {
     throw err instanceof Error ? err : new Error("Failed to list users");
-  }
-}
-
-export async function addUserAction(
-  accessKey: string,
-  secretKey: string,
-  policy: string,
-): Promise<{ accessKey: string; secretKey: string } | { error: string }> {
-  try {
-    const res = await rpc<{ accessKey: string; secretKey: string }>("AddIAMUser", {
-      accessKey,
-      secretKey,
-      policy,
-    });
-    return { accessKey: res.accessKey, secretKey: res.secretKey };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to create user" };
   }
 }
 

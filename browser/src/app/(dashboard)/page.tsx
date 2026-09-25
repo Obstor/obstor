@@ -474,7 +474,7 @@ export default async function DashboardHome() {
         <div className="grid grid-cols-3 gap-2 border-amber-200/10 border-t pt-3">
           <Stat value={humanCount(objectsCount)} label="objects" />
           <Stat value={humanCount(buckets.length)} label="buckets" />
-          <Stat value={total > 0 ? humanSize(total) : "N/A"} label="raw capacity" />
+          <Stat value={total > 0 ? humanSize(total) : "N/A"} label="capacity" />
         </div>
       </div>
     </Card>
