@@ -61,6 +61,7 @@ const (
 	peerRESTMethodGetMetacacheListing    = "/getmetacache"
 	peerRESTMethodUpdateMetacacheListing = "/updatemetacache"
 	peerRESTMethodGetPeerMetrics         = "/peermetrics"
+	peerRESTMethodListActivity           = "/listactivity"
 )
 
 const (

@@ -68,6 +68,7 @@ func (a adminAPIHandlers) RemoveUser(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	accessKey := vars["accessKey"]
+	logger.GetReqInfo(ctx).SetTags("subject", accessKey)
 
 	ok, _, err := globalIAMSys.IsTempUser(accessKey)
 	if err != nil {
@@ -208,6 +209,7 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrInvalidRequest), r.URL)
 		return
 	}
+	logger.GetReqInfo(ctx).SetTags("subject", updReq.Group)
 
 	if updReq.IsRemove {
 		err = globalIAMSys.RemoveUsersFromGroup(updReq.Group, updReq.Members)
@@ -298,6 +300,7 @@ func (a adminAPIHandlers) SetGroupStatus(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	group := vars["group"]
 	status := vars["status"]
+	logger.GetReqInfo(ctx).SetTags("subject", group)
 
 	var err error
 	switch status {
@@ -336,6 +339,7 @@ func (a adminAPIHandlers) SetUserStatus(w http.ResponseWriter, r *http.Request) 
 	vars := mux.Vars(r)
 	accessKey := vars["accessKey"]
 	status := vars["status"]
+	logger.GetReqInfo(ctx).SetTags("subject", accessKey)
 
 	// This API is not allowed to lookup accessKey user status
 	if isRootCredAccessKey(accessKey) {
@@ -424,6 +428,7 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAccessDenied), r.URL)
 		return
 	}
+	logger.GetReqInfo(ctx).SetTags("subject", accessKey)
 
 	if r.ContentLength > maxEConfigJSONSize || r.ContentLength == -1 {
 		// More than maxConfigSize bytes were available
@@ -590,6 +595,7 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
 	}
+	logger.GetReqInfo(ctx).SetTags("subject", newCred.AccessKey)
 
 	// Notify all other Obstor peers to reload user the service account
 	for _, nerr := range globalNotificationSys.LoadServiceAccount(newCred.AccessKey) {
@@ -675,6 +681,7 @@ func (a adminAPIHandlers) UpdateServiceAccount(w http.ResponseWriter, r *http.Re
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAccessDenied), r.URL)
 		return
 	}
+	logger.GetReqInfo(ctx).SetTags("subject", accessKey)
 
 	password := cred.SecretKey
 	reqBytes, err := madmin.DecryptData(password, io.LimitReader(r.Body, r.ContentLength))
@@ -943,6 +950,7 @@ func (a adminAPIHandlers) DeleteServiceAccount(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	logger.GetReqInfo(ctx).SetTags("subject", serviceAccount)
 	err = globalIAMSys.DeleteServiceAccount(ctx, serviceAccount)
 	if err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
@@ -1169,6 +1177,7 @@ func (a adminAPIHandlers) RemoveCannedPolicy(w http.ResponseWriter, r *http.Requ
 
 	vars := mux.Vars(r)
 	policyName := vars["name"]
+	logger.GetReqInfo(ctx).SetTags("subject", policyName)
 
 	if err := globalIAMSys.DeletePolicy(policyName); err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
@@ -1197,6 +1206,7 @@ func (a adminAPIHandlers) AddCannedPolicy(w http.ResponseWriter, r *http.Request
 
 	vars := mux.Vars(r)
 	policyName := vars["name"]
+	logger.GetReqInfo(ctx).SetTags("subject", policyName)
 
 	// Error out if Content-Length is missing.
 	if r.ContentLength <= 0 {
@@ -1251,6 +1261,7 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 	policyName := vars["policyName"]
 	entityName := vars["userOrGroup"]
 	isGroup := vars["isGroup"] == "true"
+	logger.GetReqInfo(ctx).SetTags("subject", entityName)
 
 	if !isGroup {
 		ok, _, err := globalIAMSys.IsTempUser(entityName)

@@ -18,4 +18,4 @@
 
 test_run_dir="$TESTS_RUN_CORE_DIR/aws-sdk-php"
 $WGET --output-document=- https://getcomposer.org/installer | php -- --install-dir="$test_run_dir"
-php "$test_run_dir/composer.phar" --working-dir="$test_run_dir" install
+php "$test_run_dir/composer.phar" --working-dir="$test_run_dir" update --with-all-dependencies --no-interaction --prefer-dist

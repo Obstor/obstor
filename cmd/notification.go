@@ -1235,6 +1235,17 @@ func (sys *NotificationSys) ServerInfo() []madmin.ServerProperties {
 	return reply
 }
 
+// ListActivity - asks every peer for its latest activity events
+func (sys *NotificationSys) ListActivity(ctx context.Context, f activityFilter) ([]activityPage, int) {
+	peers := make([]activityPeer, 0, len(sys.peerClients))
+	for _, client := range sys.peerClients {
+		if client != nil {
+			peers = append(peers, client)
+		}
+	}
+	return gatherPeerActivity(ctx, peers, f, activityPeerTimeout)
+}
+
 // GetLocalDiskIDs - return disk ids of the local disks of the peers.
 func (sys *NotificationSys) GetLocalDiskIDs(ctx context.Context) (localDiskIDs [][]string) {
 	localDiskIDs = make([][]string, len(sys.peerClients))

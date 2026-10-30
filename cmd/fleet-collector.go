@@ -126,7 +126,7 @@ func (globalCounterSource) ID() string      { return globalDeploymentID }
 func (globalCounterSource) Label() string   { h, _ := os.Hostname(); return h }
 func (globalCounterSource) Version() string { return Version }
 func (globalCounterSource) Storage() (used, total, free, objects, buckets uint64, dOn, dTot, nOn, nTot int) {
-	return readLocalStorageForFleet()
+	return readStorageForFleet()
 }
 
 // Fold this node's own counters into the store
@@ -178,8 +178,8 @@ func currentFleetRegion() string {
 	return "us-east-1"
 }
 
-// Reads local capacity, counts, and disk health
-func readLocalStorageForFleet() (used, total, free, objects, buckets uint64, dOn, dTot, nOn, nTot int) {
+// Count capacity, disk, and node health
+func readStorageForFleet() (used, total, free, objects, buckets uint64, dOn, dTot, nOn, nTot int) {
 	objectAPI := newObjectLayerFn()
 	if objectAPI == nil {
 		return
@@ -191,16 +191,30 @@ func readLocalStorageForFleet() (used, total, free, objects, buckets uint64, dOn
 		objects += bu.ObjectsCount
 	}
 	buckets = uint64(len(dui.BucketsUsage))
-	si, _ := objectAPI.LocalStorageInfo(ctx)
-	for _, d := range si.Disks {
-		dTot++
-		if d.State == madmin.DriveStateOk {
-			dOn++
-		}
+	si, _ := objectAPI.StorageInfo(ctx)
+	total, free, dOn, dTot, nOn, nTot = storageTotals(si.Disks)
+	return
+}
+
+// Calculate counts
+func storageTotals(disks []madmin.Disk) (total, free uint64, dOn, dTot, nOn, nTot int) {
+	nodeUp := map[string]bool{}
+	for _, d := range disks {
 		total += d.TotalSpace
 		free += d.AvailableSpace
+		dTot++
+		ok := d.State == madmin.DriveStateOk
+		if ok {
+			dOn++
+		}
+		node := diskNode(d.Endpoint)
+		nodeUp[node] = nodeUp[node] || ok
 	}
-	// Local is one node, multi-node peer counts are slice 2
-	nOn, nTot = 1, 1
+	nTot = len(nodeUp)
+	for _, up := range nodeUp {
+		if up {
+			nOn++
+		}
+	}
 	return
 }

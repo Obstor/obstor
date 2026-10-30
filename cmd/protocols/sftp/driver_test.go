@@ -10,8 +10,12 @@ package sftp
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"math"
+	"net/http"
+	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -394,5 +398,125 @@ func TestRangeReaderAtWaitTimeout(t *testing.T) {
 	}
 	if opens != 2 {
 		t.Fatalf("expected timeout fallback to re-open once, opens=%d", opens)
+	}
+}
+
+type recordedActivity struct {
+	source, accessKey, api, bucket, object string
+	status                                 int
+}
+
+// Replace activity recorder until test ends
+func swapRecordActivity(t *testing.T) *[]recordedActivity {
+	t.Helper()
+	got := &[]recordedActivity{}
+	saved := recordActivity
+	recordActivity = func(source, accessKey, api, bucket, object string, status int) {
+		*got = append(*got, recordedActivity{source, accessKey, api, bucket, object, status})
+	}
+	t.Cleanup(func() { recordActivity = saved })
+	return got
+}
+
+func TestSFTPFileWriterRecordsActivity(t *testing.T) {
+	got := swapRecordActivity(t)
+	newWriter := func(putErr error) *sftpFileWriter {
+		pr, pw := io.Pipe()
+		done := make(chan error, 1)
+		go func() {
+			_, err := io.Copy(io.Discard, pr)
+			if putErr != nil {
+				err = putErr
+			}
+			done <- err
+		}()
+		return &sftpFileWriter{
+			streamingWriterAt: &streamingWriterAt{w: pw},
+			pw:                pw,
+			done:              done,
+			accessKey:         "sftpuser",
+			bucket:            "alpha",
+			object:            "docs/a.txt",
+		}
+	}
+
+	ok := newWriter(nil)
+	if _, err := ok.WriteAt([]byte("hello"), 0); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := ok.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	want := []recordedActivity{{"sftp", "sftpuser", "PutObject", "alpha", "docs/a.txt", http.StatusOK}}
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("recorded %+v, want %+v", *got, want)
+	}
+
+	aborted := newWriter(nil)
+	if _, err := aborted.WriteAt([]byte("partial"), 0); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	aborted.TransferError(io.ErrUnexpectedEOF)
+	if err := aborted.Close(); err == nil {
+		t.Fatal("expected Close to fail after TransferError")
+	}
+	want = append(want, recordedActivity{"sftp", "sftpuser", "PutObject", "alpha", "docs/a.txt", http.StatusInternalServerError})
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("interrupted upload recorded %+v, want %+v", *got, want)
+	}
+
+	refused := newWriter(os.ErrPermission)
+	if _, err := refused.WriteAt([]byte("hello"), 0); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := refused.Close(); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("close = %v, want the PutObject error", err)
+	}
+	want = append(want, recordedActivity{"sftp", "sftpuser", "PutObject", "alpha", "docs/a.txt", http.StatusInternalServerError})
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("storage failure recorded %+v, want %+v", *got, want)
+	}
+
+	gap := newWriter(nil)
+	if _, err := gap.WriteAt([]byte("missing prefix"), 10); err != nil {
+		t.Fatalf("park write: %v", err)
+	}
+	if err := gap.Close(); err == nil {
+		t.Fatal("expected Close to fail on an upload with a hole")
+	}
+	want = append(want, recordedActivity{"sftp", "sftpuser", "PutObject", "alpha", "docs/a.txt", http.StatusInternalServerError})
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("incomplete upload recorded %+v, want %+v", *got, want)
+	}
+
+	overflow := newWriter(nil)
+	if _, err := overflow.WriteAt(make([]byte, sftpWriteReorderMax+1), 10); err == nil {
+		t.Fatal("expected overflow rejection")
+	}
+	if err := overflow.Close(); err == nil {
+		t.Fatal("expected Close to fail after sticky stream error")
+	}
+	want = append(want, recordedActivity{"sftp", "sftpuser", "PutObject", "alpha", "docs/a.txt", http.StatusInternalServerError})
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("overflowed upload recorded %+v, want %+v", *got, want)
+	}
+}
+
+func TestSFTPRecordStatus(t *testing.T) {
+	got := swapRecordActivity(t)
+	d := newSFTPDriver("sftpuser")
+	if err := d.record("DeleteObject", "alpha", "a.txt", nil); err != nil {
+		t.Fatalf("record success = %v, want nil", err)
+	}
+	boom := errors.New("boom")
+	if err := d.record("RenameObject", "alpha", "b.txt", boom); err != boom {
+		t.Fatalf("record failure = %v, want the operation's error", err)
+	}
+	want := []recordedActivity{
+		{"sftp", "sftpuser", "DeleteObject", "alpha", "a.txt", http.StatusOK},
+		{"sftp", "sftpuser", "RenameObject", "alpha", "b.txt", http.StatusInternalServerError},
+	}
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("recorded %+v, want %+v", *got, want)
 	}
 }

@@ -213,7 +213,11 @@ func fsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 			if err != nil {
 				continue
 			}
-			results <- objInfo
+			select {
+			case results <- objInfo:
+			case <-ctx.Done():
+				return
+			}
 			if walkResult.end {
 				break
 			}

@@ -1,10 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { buildAccessIndex, type IndexedPolicy, type IndexedUser } from "@/lib/access-index";
+import { type ReactNode, useMemo, useState } from "react";
+import { Checkbox } from "@/components/Checkbox";
+import {
+  buildAccessIndex,
+  type IndexedPolicy,
+  type IndexedUser,
+  newUserError,
+} from "@/lib/access-index";
 import {
   type AccessSnapshot,
+  createUserAction,
   deletePolicyAction,
   deleteUserAction,
   renamePolicyAction,
@@ -13,25 +20,27 @@ import {
   setUserPoliciesAction,
   setUserStatusAction,
 } from "@/lib/actions";
+import { addBucketToPolicy, fullBucketPolicy } from "@/lib/policy-templates";
+import { safeDisplayName } from "@/lib/safe-name";
+import { CopyButton } from "./CopyButton";
 import { Dialog } from "./Dialog";
+import { PageHeader } from "./PageHeader";
+import { Segmented } from "./Segmented";
+import { SelectMenu } from "./SelectMenu";
+import { SearchField, Toolbar } from "./Toolbar";
 
+type Tab = "users" | "policies";
 type UserFilter = "all" | "no-policy" | "not-scoped";
 type PolicyFilter = "all" | "not-scoped" | "missing-bucket";
 
-const NEW_POLICY_BODY = JSON.stringify(
-  {
-    Version: "2012-10-17",
-    Statement: [
-      {
-        Effect: "Allow",
-        Action: ["s3:*"],
-        Resource: ["arn:aws:s3:::bucket-name", "arn:aws:s3:::bucket-name/*"],
-      },
-    ],
-  },
-  null,
-  2,
-);
+interface Credentials {
+  accessKey: string;
+  secretKey: string;
+}
+
+// Anywhere on row opens dialog
+const ROW = "relative transition-colors hover:bg-white/[0.03]";
+const ROW_BUTTON = "block max-w-full text-left after:absolute after:inset-0";
 
 export function AccessManager({ snapshot }: { snapshot: AccessSnapshot }) {
   const router = useRouter();
@@ -40,18 +49,22 @@ export function AccessManager({ snapshot }: { snapshot: AccessSnapshot }) {
     [snapshot],
   );
 
+  const [tab, setTab] = useState<Tab>("users");
   const [userFilter, setUserFilter] = useState<UserFilter>("all");
   const [policyFilter, setPolicyFilter] = useState<PolicyFilter>("all");
   const [query, setQuery] = useState("");
   const [openUser, setOpenUser] = useState<IndexedUser | null>(null);
+  const [newUser, setNewUser] = useState(false);
   const [openPolicy, setOpenPolicy] = useState<IndexedPolicy | null>(null);
   const [newPolicy, setNewPolicy] = useState(false);
   const [banner, setBanner] = useState("");
 
-  const noPolicy = idx.users.filter((u) => u.policies.length === 0);
-  const notScopedUsers = idx.users.filter((u) => u.buckets.length === 0 && u.policies.length > 0);
-  const notScopedPolicies = idx.policies.filter((p) => p.buckets.length === 0);
-  const missingBucket = idx.policies.filter((p) => p.missingBuckets.length > 0);
+  const noPolicy = idx.users.filter((u) => u.policies.length === 0).length;
+  const notScopedUsers = idx.users.filter(
+    (u) => u.buckets.length === 0 && u.policies.length > 0,
+  ).length;
+  const notScopedPolicies = idx.policies.filter((p) => p.buckets.length === 0).length;
+  const missingBucket = idx.policies.filter((p) => p.missingBuckets.length > 0).length;
 
   const matches = (s: string) => s.toLowerCase().includes(query.toLowerCase());
 
@@ -80,150 +93,339 @@ export function AccessManager({ snapshot }: { snapshot: AccessSnapshot }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <>
+      <PageHeader
+        title="Access"
+        subtitle="Users and policies across every bucket."
+        actions={
+          tab === "users" ? (
+            <button
+              type="button"
+              onClick={() => setNewUser(true)}
+              disabled={Boolean(snapshot.usersError)}
+              title={snapshot.usersError ? "Users could not be listed." : undefined}
+              className="font-body inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-[15px] leading-[calc(20/14)] font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+            >
+              <span className="icon-[tabler--user-plus] text-lg" />
+              New user
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNewPolicy(true)}
+              className="font-body inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-[15px] leading-[calc(20/14)] font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+            >
+              <span className="icon-[tabler--plus] text-lg" />
+              New policy
+            </button>
+          )
+        }
+      />
+
       {banner && (
-        <p className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 font-body text-red-400 text-sm">
+        <p className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
           {banner}
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-xs flex-1">
-          <span className="icon-[tabler--search] pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-stone-600 text-xs" />
-          <input
-            type="text"
-            placeholder="Filter by name..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full rounded-md border border-amber-200/5 bg-surface py-1.5 pr-3 pl-8 font-mono text-xs outline-none transition-colors placeholder:text-stone-600 focus:border-amber-500"
-          />
-        </div>
-        <p className="font-mono text-[10px] text-stone-600">
-          Status and policies are written when you click Save.
-        </p>
+      <div role="tablist" aria-label="Access" className="flex gap-6 border-b border-stone-800/70">
+        {(["users", "policies"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-[15px] font-medium transition-colors ${
+              tab === t
+                ? "border-amber-500 text-stone-100"
+                : "border-transparent text-stone-400 hover:text-stone-200"
+            }`}
+          >
+            <span>{t === "users" ? "Users" : "Policies"}</span>
+            <span className="bg-surface-overlay inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 font-mono text-xs text-stone-300">
+              {t === "users" ? idx.users.length : idx.policies.length}
+            </span>
+          </button>
+        ))}
       </div>
 
-      <Panel
-        title="Users"
-        icon="icon-[tabler--user]"
-        error={snapshot.usersError && `Could not load users: ${snapshot.usersError}`}
-        action={
-          <Chips
-            options={[
-              { id: "all", label: "All" },
-              { id: "no-policy", label: `No direct policy (${noPolicy.length})` },
-              { id: "not-scoped", label: `Not bucket scoped (${notScopedUsers.length})` },
-            ]}
-            value={userFilter}
-            onChange={(v) => setUserFilter(v as UserFilter)}
-          />
-        }
-      >
-        {users.length === 0 ? (
-          <Empty text={idx.users.length === 0 ? "No users yet." : "No users match that filter."} />
-        ) : (
-          <Rows>
-            {users.map((u) => (
-              <button
-                key={u.accessKey}
-                type="button"
-                onClick={() => setOpenUser(u)}
-                className="grid w-full grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface/50"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-mono text-stone-300 text-xs">
-                    {u.accessKey}
-                  </span>
-                  <span className="mt-0.5 block truncate font-mono text-[10px] text-stone-600">
-                    {u.catchAll
-                      ? "All buckets"
-                      : u.buckets.length > 0
-                        ? u.buckets.join(", ")
-                        : "No bucket access"}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {u.policies.length === 0 && <Badge tone="warn">No direct policy</Badge>}
-                  {u.missingPolicies.length > 0 && <Badge tone="warn">Missing</Badge>}
-                  {u.status === "disabled" && <Badge>Disabled</Badge>}
-                  <span className="font-mono text-[10px] text-stone-600">
-                    {u.policies.length} {u.policies.length === 1 ? "policy" : "policies"}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </Rows>
-        )}
-        <p className="mt-3 font-mono text-[10px] text-stone-600">
-          Service accounts, temporary credentials and groups are not listed. The server does not
-          list them on the dashboard.
-        </p>
-      </Panel>
+      {tab === "users" ? (
+        <>
+          <section className="bg-abyss rounded-xl">
+            {snapshot.usersError ? (
+              <LoadError text={`Could not load users: ${snapshot.usersError}`} />
+            ) : (
+              <>
+                <Toolbar>
+                  <SearchField value={query} onChange={setQuery} placeholder="Filter users" />
+                  <Segmented
+                    label="Show users"
+                    options={[
+                      { id: "all", label: "All", count: idx.users.length },
+                      { id: "no-policy", label: "No policy", count: noPolicy },
+                      { id: "not-scoped", label: "Not scoped", count: notScopedUsers },
+                    ]}
+                    value={userFilter}
+                    onChange={setUserFilter}
+                  />
+                </Toolbar>
+                {users.length === 0 ? (
+                  <Empty
+                    text={idx.users.length === 0 ? "No users yet." : "No users match that filter."}
+                  />
+                ) : (
+                  <div className="px-4 pb-4">
+                    <div className="overflow-x-auto rounded-lg border border-stone-800/70">
+                      <table className="w-full">
+                        <thead>
+                          <tr>
+                            <th
+                              scope="col"
+                              className="bg-surface font-body h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                            >
+                              Access key
+                            </th>
+                            <th
+                              scope="col"
+                              className="bg-surface font-body hidden h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md md:table-cell"
+                            >
+                              Buckets
+                            </th>
+                            <th
+                              scope="col"
+                              className="bg-surface font-body hidden h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md sm:table-cell"
+                            >
+                              Policies
+                            </th>
+                            <th
+                              scope="col"
+                              className="bg-surface font-body h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                            >
+                              Status
+                            </th>
+                            <th
+                              scope="col"
+                              className="bg-surface font-body h-8 w-10 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                            >
+                              <span className="sr-only">Open</span>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.map((u) => (
+                            <tr key={u.accessKey} className={ROW}>
+                              <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] pointer-coarse:h-11">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenUser(u)}
+                                  title={safeDisplayName(u.accessKey)}
+                                  className={ROW_BUTTON}
+                                >
+                                  <span className="block max-w-[16rem] truncate font-mono text-stone-100">
+                                    <bdi>{safeDisplayName(u.accessKey)}</bdi>
+                                  </span>
+                                </button>
+                              </td>
+                              <td className="hidden h-10 border-t border-stone-800/70 px-4 text-[13px] md:table-cell pointer-coarse:h-11">
+                                <span className="block max-w-[18rem] truncate text-stone-300">
+                                  {u.catchAll ? (
+                                    "All buckets"
+                                  ) : u.buckets.length > 0 ? (
+                                    <bdi>{safeDisplayName(u.buckets.join(", "))}</bdi>
+                                  ) : (
+                                    <span className="text-stone-400">No bucket access</span>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="hidden h-10 border-t border-stone-800/70 px-4 text-[13px] sm:table-cell pointer-coarse:h-11">
+                                {u.policies.length === 0 ? (
+                                  <Badge tone="warn">No direct policy</Badge>
+                                ) : (
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <span className="block max-w-[14rem] truncate text-stone-300">
+                                      <bdi>{safeDisplayName(u.policies.join(", "))}</bdi>
+                                    </span>
+                                    {u.missingPolicies.length > 0 && (
+                                      <Badge tone="warn">Missing</Badge>
+                                    )}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] pointer-coarse:h-11">
+                                <span className="inline-flex items-center gap-2 whitespace-nowrap text-stone-300">
+                                  <span
+                                    className={`h-2 w-2 shrink-0 rounded-full ${
+                                      u.status === "enabled" ? "bg-green-500" : "bg-stone-500"
+                                    }`}
+                                  />
+                                  {u.status === "enabled" ? "Active" : "Disabled"}
+                                </span>
+                              </td>
+                              <td className="h-10 w-10 border-t border-stone-800/70 px-4 text-right text-[13px] pointer-coarse:h-11">
+                                <span className="icon-[tabler--chevron-right] align-middle text-lg text-stone-500" />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+          <p className="flex items-center gap-2 text-[13px] text-stone-400">
+            <span className="icon-[tabler--info-circle] shrink-0 text-base" />
+            Service accounts, temporary credentials and groups are not listed.
+          </p>
+        </>
+      ) : (
+        <section className="bg-abyss rounded-xl">
+          {snapshot.policiesError ? (
+            <LoadError text={`Could not load policies: ${snapshot.policiesError}`} />
+          ) : (
+            <>
+              <Toolbar>
+                <SearchField value={query} onChange={setQuery} placeholder="Filter policies" />
+                <Segmented
+                  label="Show policies"
+                  options={[
+                    { id: "all", label: "All", count: idx.policies.length },
+                    { id: "not-scoped", label: "Not scoped", count: notScopedPolicies },
+                    { id: "missing-bucket", label: "Missing bucket", count: missingBucket },
+                  ]}
+                  value={policyFilter}
+                  onChange={setPolicyFilter}
+                />
+              </Toolbar>
+              {policies.length === 0 ? (
+                <Empty
+                  text={
+                    idx.policies.length === 0
+                      ? "No policies yet."
+                      : "No policies match that filter."
+                  }
+                />
+              ) : (
+                <div className="px-4 pb-4">
+                  <div className="overflow-x-auto rounded-lg border border-stone-800/70">
+                    <table className="w-full">
+                      <thead>
+                        <tr>
+                          <th
+                            scope="col"
+                            className="bg-surface font-body h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                          >
+                            Name
+                          </th>
+                          <th
+                            scope="col"
+                            className="bg-surface font-body hidden h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md sm:table-cell"
+                          >
+                            Scope
+                          </th>
+                          <th
+                            scope="col"
+                            className="bg-surface font-body h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                          >
+                            Held by
+                          </th>
+                          <th
+                            scope="col"
+                            className="bg-surface font-body hidden h-8 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md md:table-cell"
+                          >
+                            Flags
+                          </th>
+                          <th
+                            scope="col"
+                            className="bg-surface font-body h-8 w-10 px-4 text-left text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase first:rounded-l-md last:rounded-r-md"
+                          >
+                            <span className="sr-only">Open</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {policies.map((p) => (
+                          <tr key={p.name} className={ROW}>
+                            <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] pointer-coarse:h-11">
+                              <button
+                                type="button"
+                                onClick={() => setOpenPolicy(p)}
+                                title={safeDisplayName(p.name)}
+                                className={ROW_BUTTON}
+                              >
+                                <span className="block max-w-[16rem] truncate text-[14px] text-stone-100">
+                                  <bdi>{safeDisplayName(p.name)}</bdi>
+                                </span>
+                              </button>
+                            </td>
+                            <td className="hidden h-10 border-t border-stone-800/70 px-4 text-[13px] sm:table-cell pointer-coarse:h-11">
+                              <span
+                                className={`block max-w-[18rem] truncate ${
+                                  p.parseError || p.missingBuckets.length > 0
+                                    ? "text-red-400"
+                                    : "text-stone-300"
+                                }`}
+                              >
+                                <bdi>{safeDisplayName(scopeLabel(p))}</bdi>
+                              </span>
+                            </td>
+                            <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] whitespace-nowrap pointer-coarse:h-11">
+                              {p.holders.length === 0 ? (
+                                <span className="text-stone-400">Nobody</span>
+                              ) : (
+                                <span className="text-stone-300">
+                                  <span className="font-mono">{p.holders.length}</span>{" "}
+                                  {p.holders.length === 1 ? "user" : "users"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="hidden h-10 border-t border-stone-800/70 px-4 text-[13px] md:table-cell pointer-coarse:h-11">
+                              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                                {p.builtIn && <Badge>Built in</Badge>}
+                                {p.denyOnly && <Badge>Deny only</Badge>}
+                                {p.missingBuckets.length > 0 && (
+                                  <Badge tone="warn">Missing bucket</Badge>
+                                )}
+                                {p.buckets.length > 1 && <Badge>Shared</Badge>}
+                              </span>
+                            </td>
+                            <td className="h-10 w-10 border-t border-stone-800/70 px-4 text-right text-[13px] pointer-coarse:h-11">
+                              <span className="icon-[tabler--chevron-right] align-middle text-lg text-stone-500" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
-      <Panel
-        title="Policies"
-        icon="icon-[tabler--file-text]"
-        error={snapshot.policiesError && `Could not load policies: ${snapshot.policiesError}`}
-        action={
-          <div className="flex items-center gap-3">
-            <Chips
-              options={[
-                { id: "all", label: "All" },
-                { id: "not-scoped", label: `Not bucket scoped (${notScopedPolicies.length})` },
-                { id: "missing-bucket", label: `Missing bucket (${missingBucket.length})` },
-              ]}
-              value={policyFilter}
-              onChange={(v) => setPolicyFilter(v as PolicyFilter)}
-            />
-            <button
-              type="button"
-              onClick={() => setNewPolicy(true)}
-              className="flex items-center gap-1.5 rounded-md border border-amber-200/15 px-2 py-1 font-mono text-[11px] text-stone-400 transition-colors hover:bg-white/5"
-            >
-              <span className="icon-[tabler--plus] block text-[12px] text-amber-500" />
-              New policy
-            </button>
-          </div>
-        }
-      >
-        {policies.length === 0 ? (
-          <Empty
-            text={idx.policies.length === 0 ? "No policies yet." : "No policies match that filter."}
-          />
-        ) : (
-          <Rows>
-            {policies.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                onClick={() => setOpenPolicy(p)}
-                className="grid w-full grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface/50"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-mono text-stone-300 text-xs">{p.name}</span>
-                  <span className="mt-0.5 block truncate font-mono text-[10px] text-stone-600">
-                    {scopeLabel(p)}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {p.builtIn && <Badge>Built in</Badge>}
-                  {p.denyOnly && <Badge>Deny only</Badge>}
-                  {p.missingBuckets.length > 0 && <Badge tone="warn">Missing bucket</Badge>}
-                  {p.buckets.length > 1 && <Badge>Shared</Badge>}
-                  <span className="font-mono text-[10px] text-stone-600">
-                    {p.holders.length > 0 ? `Held by ${p.holders.length}` : "Held by nobody"}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </Rows>
-        )}
-      </Panel>
+      {newUser && (
+        <UserDialog
+          mode="create"
+          policies={idx.policies}
+          existing={idx.users.map((u) => u.accessKey)}
+          onClose={() => setNewUser(false)}
+          onCreate={async (accessKey, held) => {
+            const res = await createUserAction(accessKey, held);
+            if (!("error" in res)) router.refresh();
+            return res;
+          }}
+        />
+      )}
 
       {openUser && (
         <UserDialog
+          mode="edit"
           user={openUser}
           policies={idx.policies}
+          existing={idx.users.map((u) => u.accessKey)}
           onClose={() => setOpenUser(null)}
           onSave={async (next, status) => {
             const a = await setUserPoliciesAction(openUser.accessKey, next);
@@ -281,7 +483,7 @@ export function AccessManager({ snapshot }: { snapshot: AccessSnapshot }) {
           onDelete={null}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -290,26 +492,138 @@ function scopeLabel(p: IndexedPolicy): string {
   if (p.catchAll) return "All buckets";
   if (p.missingBuckets.length > 0) return `Missing bucket: ${p.missingBuckets.join(", ")}`;
   if (p.buckets.length > 0) return p.buckets.join(", ");
-  if (p.adminOnly) return "No bucket scope";
   return "No bucket scope";
 }
 
 // Modals
-function UserDialog({
-  user,
-  policies,
-  onClose,
-  onSave,
-  onRotate,
-  onDelete,
-}: {
-  user: IndexedUser;
+interface UserDialogBase {
   policies: IndexedPolicy[];
+  existing: string[];
   onClose: () => void;
+}
+
+interface CreateUserProps extends UserDialogBase {
+  mode: "create";
+  onCreate: (accessKey: string, policies: string[]) => Promise<Credentials | { error: string }>;
+}
+
+interface EditUserProps extends UserDialogBase {
+  mode: "edit";
+  user: IndexedUser;
   onSave: (policies: string[], enabled: boolean) => Promise<void>;
   onRotate: () => Promise<string | null>;
   onDelete: () => Promise<void>;
-}) {
+}
+
+type UserDialogProps = CreateUserProps | EditUserProps;
+
+function UserDialog(props: UserDialogProps) {
+  const title = props.mode === "edit" ? props.user.accessKey : "New user";
+  return (
+    <Dialog open onClose={props.onClose} className="max-w-2xl" label={title}>
+      <div className="bg-abyss max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-xl p-6">
+        <DialogHead title={title} onClose={props.onClose} />
+        {props.mode === "edit" ? <EditUser {...props} /> : <CreateUser {...props} />}
+      </div>
+    </Dialog>
+  );
+}
+
+function CreateUser({ policies, existing, onClose, onCreate }: CreateUserProps) {
+  const [accessKey, setAccessKey] = useState("");
+  const [held, setHeld] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [created, setCreated] = useState<Credentials | null>(null);
+
+  const keyError = newUserError(accessKey, existing);
+  const toggle = (name: string) =>
+    setHeld((h) => (h.includes(name) ? h.filter((x) => x !== name) : [...h, name]));
+
+  if (created) {
+    return (
+      <>
+        <Note>Copy the secret key now. It is not shown again.</Note>
+        <CredentialRow label="Access key" value={created.accessKey} />
+        <CredentialRow label="Secret key" value={created.secretKey} />
+        <button
+          type="button"
+          onClick={onClose}
+          className="font-body mt-2 inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3.5 text-sm font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          Done
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-400"
+        >
+          {error}
+        </p>
+      )}
+
+      <label
+        htmlFor="new-user-access-key"
+        className="font-body mb-2 block text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase"
+      >
+        Access key
+      </label>
+      <input
+        id="new-user-access-key"
+        type="text"
+        value={accessKey}
+        onChange={(e) => setAccessKey(e.target.value)}
+        placeholder="Leave blank to generate one"
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={keyError !== null}
+        aria-describedby="new-user-access-key-help"
+        className="bg-surface h-9 w-full rounded-lg border border-stone-800 px-3 font-mono text-base text-stone-100 transition-colors outline-none placeholder:text-stone-500 focus:border-amber-500 disabled:opacity-50 sm:text-sm"
+      />
+      <p
+        id="new-user-access-key-help"
+        className={`mt-1.5 mb-4 text-[13px] ${keyError ? "text-red-400" : "text-stone-400"}`}
+      >
+        {keyError ?? "3 to 20 characters, no spaces. The secret key is always generated."}
+      </p>
+
+      <SectionLabel>Policies</SectionLabel>
+      <PolicyChecklist policies={policies} held={held} onToggle={toggle} />
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || keyError !== null}
+          onClick={async () => {
+            setBusy(true);
+            const res = await onCreate(accessKey.trim(), held);
+            setBusy(false);
+            if ("error" in res) setError(res.error);
+            else setCreated(res);
+          }}
+          className="font-body inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3.5 text-sm font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          {busy ? "Creating..." : "Create user"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="bg-surface font-body hover:bg-surface-overlay inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+}
+
+function EditUser({ user, policies, onSave, onRotate, onDelete }: EditUserProps) {
   const [held, setHeld] = useState<string[]>(user.policies);
   const [enabled, setEnabled] = useState(user.status === "enabled");
   const [confirm, setConfirm] = useState("");
@@ -321,123 +635,152 @@ function UserDialog({
     setHeld((h) => (h.includes(name) ? h.filter((x) => x !== name) : [...h, name]));
 
   return (
-    <Dialog open onClose={onClose} className="max-w-2xl" label={user.accessKey}>
-      <div className="w-full rounded-xl border border-amber-200/5 bg-abyss p-5">
-        <DialogHead title={user.accessKey} onClose={onClose} />
+    <>
+      {user.policies.length === 0 && (
+        <Note>
+          No policy is attached directly to this account. If it belongs to a group, that grant is
+          not visible here.
+        </Note>
+      )}
 
-        {user.policies.length === 0 && (
-          <Note>
-            No policy is attached directly to this account. If it belongs to a group, that grant is
-            not visible here.
-          </Note>
-        )}
+      {missing.map((pn) => (
+        <Note key={pn} tone="warn">
+          Policy <bdi>{safeDisplayName(pn)}</bdi> no longer exists. Remove it before saving.
+        </Note>
+      ))}
 
-        {missing.map((pn) => (
-          <Note key={pn} tone="warn">
-            Policy {pn} no longer exists. Remove it before saving.
-          </Note>
-        ))}
+      <SectionLabel>Policies</SectionLabel>
+      <PolicyChecklist policies={policies} held={held} onToggle={toggle} />
 
-        <SectionLabel>Policies</SectionLabel>
-        <div className="mb-4 max-h-64 space-y-1 overflow-y-auto">
-          {held
-            .filter((pn) => !policies.some((p) => p.name === pn))
-            .map((pn) => (
-              <label
-                key={pn}
-                className="flex items-center gap-2 rounded-md border border-red-500/20 px-3 py-1.5"
-              >
-                <input type="checkbox" checked onChange={() => toggle(pn)} />
-                <span className="font-mono text-[11px] text-red-400">{pn}</span>
-                <Badge tone="warn">Missing</Badge>
-              </label>
-            ))}
-          {policies.map((p) => (
-            <label
-              key={p.name}
-              className="flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors hover:bg-surface/50"
-            >
-              <input
-                type="checkbox"
-                checked={held.includes(p.name)}
-                onChange={() => toggle(p.name)}
-              />
-              <span className="font-mono text-[11px] text-stone-300">{p.name}</span>
-              <span className="font-mono text-[10px] text-stone-600">{scopeLabel(p)}</span>
-              {p.builtIn && <Badge>Built in</Badge>}
-            </label>
-          ))}
-        </div>
+      <SectionLabel>Account</SectionLabel>
+      <label className="mb-4 flex items-center gap-2 text-sm text-stone-300">
+        <Checkbox checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        {enabled ? "Active" : "Disabled"}
+      </label>
 
-        <SectionLabel>Account</SectionLabel>
-        <label className="mb-4 flex items-center gap-2 font-mono text-[11px] text-stone-400">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          {enabled ? "Active" : "Disabled"}
-        </label>
+      {secret && (
+        <>
+          <Note>Copy the new secret key. It is not shown again.</Note>
+          <CredentialRow label="Secret key" value={secret} />
+        </>
+      )}
 
-        {secret && (
-          <Note>
-            Copy the new secret key. It is not shown again.
-            <span className="mt-2 block select-all break-all rounded-lg border border-amber-200/5 bg-void/40 px-3 py-2 font-mono text-[11px] text-stone-300">
-              {secret}
-            </span>
-          </Note>
-        )}
+      <SectionLabel>Danger zone</SectionLabel>
+      <p className="mb-2 text-sm text-stone-400">
+        Deleting <bdi>{safeDisplayName(user.accessKey)}</bdi> revokes its access key now. Service
+        accounts and temporary credentials created by it are deleted too, and the console cannot
+        list them. Type the access key to confirm.
+      </p>
+      <input
+        type="text"
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        placeholder={user.accessKey}
+        aria-label="Type the access key to confirm"
+        autoComplete="off"
+        spellCheck={false}
+        className="bg-surface mb-4 h-9 w-full rounded-lg border border-stone-800 px-3 font-mono text-base text-stone-100 transition-colors outline-none placeholder:text-stone-500 focus:border-amber-500 focus:border-red-500 disabled:opacity-50 sm:text-sm"
+      />
 
-        <SectionLabel>Danger zone</SectionLabel>
-        <p className="mb-2 font-body text-stone-500 text-xs">
-          Deleting {user.accessKey} revokes its access key now. Service accounts and temporary
-          credentials created by it are deleted too, and the console cannot list them. Type the
-          access key to confirm.
-        </p>
-        <input
-          type="text"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder={user.accessKey}
-          className="mb-4 w-full rounded-md border border-amber-200/5 bg-surface px-3 py-1.5 font-mono text-xs outline-none focus:border-red-500"
-        />
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={busy || missing.length > 0}
-            onClick={async () => {
-              setBusy(true);
-              await onSave(held, enabled);
-              setBusy(false);
-            }}
-            className="flex-1 rounded-md bg-amber-500 px-4 py-2 font-body font-medium text-black text-sm transition-colors hover:bg-amber-400 disabled:opacity-40"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setSecret(await onRotate());
-              setBusy(false);
-            }}
-            className="rounded-md border border-amber-200/15 px-3 py-2 font-mono text-[11px] text-stone-400 transition-colors hover:bg-white/5 disabled:opacity-40"
-          >
-            Rotate secret key
-          </button>
-          <button
-            type="button"
-            disabled={busy || confirm !== user.accessKey}
-            onClick={async () => {
-              setBusy(true);
-              await onDelete();
-              setBusy(false);
-            }}
-            className="rounded-md bg-red-500 px-3 py-2 font-body font-medium text-sm text-white transition-colors hover:bg-red-500/90 disabled:opacity-30"
-          >
-            Delete user
-          </button>
-        </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy || missing.length > 0}
+          onClick={async () => {
+            setBusy(true);
+            await onSave(held, enabled);
+            setBusy(false);
+          }}
+          className="font-body inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3.5 text-sm font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setSecret(await onRotate());
+            setBusy(false);
+          }}
+          className="bg-surface font-body hover:bg-surface-overlay inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          Rotate secret key
+        </button>
+        <button
+          type="button"
+          disabled={busy || confirm !== user.accessKey}
+          onClick={async () => {
+            setBusy(true);
+            await onDelete();
+            setBusy(false);
+          }}
+          className="font-body inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-red-500 px-3.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-red-500/90 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+        >
+          Delete user
+        </button>
       </div>
-    </Dialog>
+    </>
+  );
+}
+
+function PolicyChecklist({
+  policies,
+  held,
+  onToggle,
+}: {
+  policies: IndexedPolicy[];
+  held: string[];
+  onToggle: (name: string) => void;
+}) {
+  const missing = held.filter((pn) => !policies.some((p) => p.name === pn));
+  return (
+    <div className="mb-4 max-h-64 space-y-1 overflow-y-auto">
+      {missing.map((pn) => (
+        <label
+          key={pn}
+          className="flex items-center gap-2 rounded-md border border-red-500/20 px-3 py-1.5"
+        >
+          <Checkbox checked onChange={() => onToggle(pn)} />
+          <span className="text-sm text-red-400">
+            <bdi>{safeDisplayName(pn)}</bdi>
+          </span>
+          <Badge tone="warn">Missing</Badge>
+        </label>
+      ))}
+      {policies.length === 0 && missing.length === 0 && (
+        <p className="px-3 py-1.5 text-[13px] text-stone-400">
+          No policies yet. Create one on the Policies tab.
+        </p>
+      )}
+      {policies.map((p) => (
+        <label
+          key={p.name}
+          className="hover:bg-surface/50 flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors"
+        >
+          <Checkbox checked={held.includes(p.name)} onChange={() => onToggle(p.name)} />
+          <span className="shrink-0 text-sm text-stone-200">
+            <bdi>{safeDisplayName(p.name)}</bdi>
+          </span>
+          <span className="min-w-0 truncate text-[13px] text-stone-400">
+            <bdi>{safeDisplayName(scopeLabel(p))}</bdi>
+          </span>
+          {p.builtIn && <Badge>Built in</Badge>}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function CredentialRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-void mb-2 flex items-center gap-3 rounded-lg border border-stone-800/70 px-3 py-2">
+      <span className="w-20 shrink-0 text-[13px] text-stone-400">{label}</span>
+      <span className="min-w-0 flex-1 font-mono text-[13px] break-all text-stone-100 select-all">
+        <bdi>{safeDisplayName(value)}</bdi>
+      </span>
+      <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
+    </div>
   );
 }
 
@@ -455,8 +798,10 @@ function PolicyDialog({
   onDelete: (() => Promise<void>) | null;
 }) {
   const [name, setName] = useState(policy?.name ?? "");
-  const [body, setBody] = useState(policy?.policy ?? NEW_POLICY_BODY);
+  const defaultBucket = buckets[0] ?? "bucket-name";
+  const [body, setBody] = useState(() => policy?.policy ?? fullBucketPolicy(defaultBucket));
   const [addBucket, setAddBucket] = useState("");
+  const [widenError, setWidenError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const builtIn = policy?.builtIn ?? false;
@@ -466,30 +811,30 @@ function PolicyDialog({
   const widen = (bucket: string) => {
     if (!bucket) return;
     try {
-      const parsed = JSON.parse(body);
-      const list = Array.isArray(parsed.Statement) ? parsed.Statement : [parsed.Statement];
-      for (const st of list) {
-        if (st?.Effect !== "Allow") continue;
-        const res = Array.isArray(st.Resource) ? st.Resource : st.Resource ? [st.Resource] : [];
-        st.Resource = [...new Set([...res, `arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`])];
-      }
-      parsed.Statement = list;
-      setBody(JSON.stringify(parsed, null, 2));
+      setBody(addBucketToPolicy(body, bucket));
       setAddBucket("");
-    } catch {
-      // Unparseable body, user edits the json directly
+      setWidenError("");
+    } catch (error) {
+      setWidenError(
+        error instanceof SyntaxError
+          ? "Enter a valid JSON policy before adding a bucket."
+          : error instanceof Error
+            ? error.message
+            : "Edit the JSON directly to add this bucket.",
+      );
     }
   };
 
   return (
     <Dialog open onClose={onClose} className="max-w-2xl" label={policy?.name ?? "New policy"}>
-      <div className="w-full rounded-xl border border-amber-200/5 bg-abyss p-5">
+      <div className="bg-abyss max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-xl p-6">
         <DialogHead title={policy?.name ?? "New policy"} onClose={onClose} />
 
         {builtIn && (
           <Note>Built in policy. The server recreates it on restart if you delete it.</Note>
         )}
         {policy?.parseError && <Note tone="warn">This policy is not valid JSON.</Note>}
+        {widenError && <Note tone="warn">{widenError}</Note>}
         {policy && policy.holders.length > 0 && name !== policy.name && (
           <Note>
             Renaming writes the new policy, moves every holder, then deletes the old name.
@@ -503,64 +848,73 @@ function PolicyDialog({
           disabled={builtIn}
           onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
           placeholder="policy-name"
-          className="mb-4 w-full rounded-md border border-amber-200/5 bg-surface px-3 py-1.5 font-mono text-xs outline-none focus:border-amber-500 disabled:opacity-50"
+          aria-label="Policy name"
+          className="bg-surface mb-4 h-9 w-full rounded-lg border border-stone-800 px-3 font-mono text-base text-stone-100 transition-colors outline-none placeholder:text-stone-500 focus:border-amber-500 disabled:opacity-50 sm:text-sm"
         />
 
         <SectionLabel>Document</SectionLabel>
-        {!policy && (
-          <p className="mb-2 font-body text-stone-500 text-xs">
-            Replace bucket-name with a real bucket.
-          </p>
+        {!policy && buckets.length === 0 && (
+          <p className="mb-2 text-sm text-stone-400">Replace bucket-name with a real bucket.</p>
         )}
         <textarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
+          onChange={(e) => {
+            setBody(e.target.value);
+            setWidenError("");
+          }}
           spellCheck={false}
           rows={12}
-          className="mb-3 w-full rounded-lg border border-amber-200/5 bg-void/40 px-3 py-2 font-mono text-[11px] text-stone-300 outline-none focus:border-amber-500"
+          aria-label="Policy document"
+          className="bg-void mb-3 w-full rounded-lg border border-stone-800/70 px-3 py-2 font-mono text-[13px] text-stone-200 outline-none focus:border-amber-500"
         />
 
         {canWiden ? (
-          <div className="mb-4 flex items-center gap-2">
-            <select
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <SelectMenu
               value={addBucket}
-              onChange={(e) => setAddBucket(e.target.value)}
-              className="rounded-md border border-amber-200/5 bg-surface px-2 py-1.5 font-mono text-[11px] text-stone-300 outline-none focus:border-amber-500"
-            >
-              <option value="">Add bucket to this policy</option>
-              {buckets.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
+              onChange={setAddBucket}
+              label="Add bucket to this policy"
+              options={[
+                { value: "", label: "Add bucket to this policy" },
+                ...buckets.map((b) => ({ value: b, label: safeDisplayName(b) })),
+              ]}
+              className="h-8"
+            />
             <button
               type="button"
               disabled={!addBucket}
               onClick={() => widen(addBucket)}
-              className="rounded-md border border-amber-200/15 px-2 py-1.5 font-mono text-[11px] text-stone-400 transition-colors hover:bg-white/5 disabled:opacity-40"
+              className="bg-surface font-body hover:bg-surface-overlay inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
             >
               Add
             </button>
-            <span className="font-mono text-[10px] text-stone-600">
-              Review the JSON, then Save policy.
-            </span>
+            <span className="text-[13px] text-stone-400">Review the JSON, then Save policy.</span>
           </div>
         ) : (
-          <p className="mb-4 font-mono text-[10px] text-stone-600">Edit the JSON directly.</p>
+          <p className="mb-4 text-[13px] text-stone-400">Edit the JSON directly.</p>
         )}
 
         {policy && onDelete && (
           <>
             <SectionLabel>Danger zone</SectionLabel>
-            <p className="mb-3 font-body text-stone-500 text-xs">
-              {policy.holders.length > 0
-                ? `Deleting ${policy.name} removes it from ${policy.holders.length} ${
-                    policy.holders.length === 1 ? "user" : "users"
-                  }: ${policy.holders.join(", ")}.`
-                : `Deleting ${policy.name} affects no users.`}{" "}
-              {policy.buckets.length > 0 && `It stops granting ${policy.buckets.join(", ")}.`} This
-              cannot be undone.
+            <p className="mb-3 text-sm text-stone-400">
+              {policy.holders.length > 0 ? (
+                <>
+                  Deleting <bdi>{safeDisplayName(policy.name)}</bdi> removes it from{" "}
+                  {policy.holders.length} {policy.holders.length === 1 ? "user" : "users"}:{" "}
+                  <bdi>{safeDisplayName(policy.holders.join(", "))}</bdi>.
+                </>
+              ) : (
+                <>
+                  Deleting <bdi>{safeDisplayName(policy.name)}</bdi> affects no users.
+                </>
+              )}{" "}
+              {policy.buckets.length > 0 && (
+                <>
+                  It stops granting <bdi>{safeDisplayName(policy.buckets.join(", "))}</bdi>.
+                </>
+              )}{" "}
+              This cannot be undone.
             </p>
           </>
         )}
@@ -574,7 +928,7 @@ function PolicyDialog({
               await onSave(name.trim(), body);
               setBusy(false);
             }}
-            className="flex-1 rounded-md bg-amber-500 px-4 py-2 font-body font-medium text-black text-sm transition-colors hover:bg-amber-400 disabled:opacity-40"
+            className="font-body inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3.5 text-sm font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
           >
             Save policy
           </button>
@@ -588,7 +942,7 @@ function PolicyDialog({
                 await onDelete();
                 setBusy(false);
               }}
-              className="rounded-md bg-red-500 px-3 py-2 font-body font-medium text-sm text-white transition-colors hover:bg-red-500/90 disabled:opacity-30"
+              className="font-body inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-red-500 px-3.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-red-500/90 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
             >
               Delete policy
             </button>
@@ -599,115 +953,59 @@ function PolicyDialog({
   );
 }
 
-function Panel({
-  title,
-  icon,
-  action,
-  error,
-  children,
-}: {
-  title: string;
-  icon: string;
-  action?: React.ReactNode;
-  error?: string;
-  children: React.ReactNode;
-}) {
+function LoadError({ text }: { text: string }) {
   return (
-    <div className="flex flex-col rounded-xl border border-amber-200/5 bg-abyss p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-2 font-display font-semibold text-sm">
-          <span className={`${icon} text-[13px] text-amber-500`} />
-          {title}
-        </p>
-        {action}
-      </div>
-      {error ? (
-        <p className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 font-body text-red-400 text-sm">
-          {error}
-        </p>
-      ) : (
-        children
-      )}
-    </div>
-  );
-}
-
-function Rows({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="divide-y divide-amber-200/10 overflow-hidden rounded-lg border border-amber-200/5">
-      {children}
-    </div>
+    <p className="m-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+      {text}
+    </p>
   );
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="py-6 font-body text-stone-600 text-xs">{text}</p>;
+  return <p className="px-4 pt-4 pb-8 text-center text-sm text-stone-400">{text}</p>;
 }
 
-function Badge({ children, tone }: { children: React.ReactNode; tone?: "warn" }) {
+function Badge({ children, tone }: { children: ReactNode; tone?: "warn" }) {
   const cls =
-    tone === "warn" ? "border-red-500/30 text-red-400" : "border-amber-200/15 text-stone-500";
+    tone === "warn" ? "border-red-500/30 text-red-400" : "border-stone-700 text-stone-400";
   return (
-    <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase ${cls}`}>
+    <span
+      className={`rounded-md border px-1.5 py-0.5 text-[11px] font-medium tracking-[0.08em] whitespace-nowrap uppercase ${cls}`}
+    >
       {children}
     </span>
   );
 }
 
-function Chips<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { id: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          onClick={() => onChange(o.id)}
-          className={`rounded-md px-2 py-1 font-mono text-[10px] transition-colors ${
-            value === o.id
-              ? "bg-surface-overlay text-stone-200"
-              : "text-stone-600 hover:text-stone-400"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <p className="font-body mb-2 text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase">
+      {children}
+    </p>
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-2 font-mono text-[10px] text-stone-600 uppercase tracking-wider">{children}</p>
-  );
-}
-
-function Note({ children, tone }: { children: React.ReactNode; tone?: "warn" }) {
+function Note({ children, tone }: { children: ReactNode; tone?: "warn" }) {
   const cls =
     tone === "warn"
       ? "border-red-500/20 bg-red-500/5 text-red-400"
-      : "border-amber-200/10 bg-void/40 text-stone-400";
-  return <p className={`mb-3 rounded-lg border px-3 py-2 font-body text-xs ${cls}`}>{children}</p>;
+      : "border-stone-800/70 bg-abyss text-stone-300";
+  return <p className={`mb-3 rounded-lg border px-3 py-2 text-[13px] ${cls}`}>{children}</p>;
 }
 
 function DialogHead({ title, onClose }: { title: string; onClose: () => void }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-2">
-      <p className="truncate font-display font-semibold text-sm">{title}</p>
+      <h3 className="font-display truncate text-lg font-semibold">
+        <bdi>{safeDisplayName(title)}</bdi>
+      </h3>
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="text-stone-500 transition-colors hover:text-stone-300"
+        className="hover:bg-surface inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg text-stone-400 transition-colors hover:text-stone-100 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       >
-        <span className="icon-[tabler--x] text-sm" />
+        <span className="icon-[tabler--x]" />
       </button>
     </div>
   );

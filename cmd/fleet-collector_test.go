@@ -3,6 +3,8 @@ package cmd
 import (
 	"testing"
 	"time"
+
+	"github.com/obstor/obstor/pkg/madmin"
 )
 
 func TestClassifyS3Requests(t *testing.T) {
@@ -93,6 +95,54 @@ func TestCollectOnceCounterResetClampsToZero(t *testing.T) {
 	}
 }
 
+func TestStorageTotals(t *testing.T) {
+	for _, test := range []struct {
+		name                 string
+		disks                []madmin.Disk
+		total, free          uint64
+		dOn, dTot, nOn, nTot int
+	}{
+		{
+			name: "one of two hosts down",
+			disks: []madmin.Disk{
+				{Endpoint: "http://node1:9000/mnt/d1", State: madmin.DriveStateOk, TotalSpace: 100, AvailableSpace: 60},
+				{Endpoint: "http://node1:9000/mnt/d2", State: madmin.DriveStateOk, TotalSpace: 100, AvailableSpace: 40},
+				{Endpoint: "http://node2:9000/mnt/d1", State: madmin.DriveStateOffline},
+				{Endpoint: "http://node2:9000/mnt/d2", State: madmin.DriveStateOffline},
+			},
+			total: 200, free: 100, dOn: 2, dTot: 4, nOn: 1, nTot: 2,
+		},
+		{
+			name: "one healthy drive keeps a host online",
+			disks: []madmin.Disk{
+				{Endpoint: "https://node1:9000/mnt/d1", State: madmin.DriveStateOffline},
+				{Endpoint: "https://node1:9000/mnt/d2", State: madmin.DriveStateOk, TotalSpace: 50, AvailableSpace: 5},
+			},
+			total: 50, free: 5, dOn: 1, dTot: 2, nOn: 1, nTot: 1,
+		},
+		{
+			name: "local paths are one node",
+			disks: []madmin.Disk{
+				{Endpoint: "/data/d1", State: madmin.DriveStateOk, TotalSpace: 10, AvailableSpace: 4},
+				{Endpoint: "/data/d2", State: madmin.DriveStateOk, TotalSpace: 10, AvailableSpace: 6},
+				{State: madmin.DriveStateOk, TotalSpace: 30, AvailableSpace: 20},
+			},
+			total: 50, free: 30, dOn: 3, dTot: 3, nOn: 1, nTot: 1,
+		},
+		{name: "no drives"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			total, free, dOn, dTot, nOn, nTot := storageTotals(test.disks)
+			if total != test.total || free != test.free {
+				t.Fatalf("total/free = %d/%d, want %d/%d", total, free, test.total, test.free)
+			}
+			if dOn != test.dOn || dTot != test.dTot || nOn != test.nOn || nTot != test.nTot {
+				t.Fatalf("drives %d/%d nodes %d/%d, want drives %d/%d nodes %d/%d", dOn, dTot, nOn, nTot, test.dOn, test.dTot, test.nOn, test.nTot)
+			}
+		})
+	}
+}
+
 func TestCurrentFleetRegionFallsBackToDefault(t *testing.T) {
 	saved := globalServerRegion
 	defer func() { globalServerRegion = saved }()
@@ -106,5 +156,19 @@ func TestCurrentFleetRegionFallsBackToDefault(t *testing.T) {
 	globalServerRegion = "eu-west-1"
 	if got := currentFleetRegion(); got != "eu-west-1" {
 		t.Fatalf("configured region: got %q, want eu-west-1", got)
+	}
+}
+
+func TestStorageTotalsDownHostsKeepEndpoints(t *testing.T) {
+	endpoints := []string{"http://node2:9000/mnt/d1", "http://node3:9000/mnt/d1"}
+	disks := []StorageAPI{newNaughtyDisk(nil, nil, errDiskNotFound), newNaughtyDisk(nil, nil, errDiskNotFound)}
+	infos, _ := getDisksInfo(disks, endpoints)
+	for i, d := range infos {
+		if d.Endpoint != endpoints[i] || d.State != madmin.DriveStateOffline {
+			t.Fatalf("disk %d: endpoint %q state %q, want %q offline", i, d.Endpoint, d.State, endpoints[i])
+		}
+	}
+	if _, _, dOn, dTot, nOn, nTot := storageTotals(infos); dOn != 0 || dTot != 2 || nOn != 0 || nTot != 2 {
+		t.Fatalf("drives %d/%d nodes %d/%d, want 0/2 0/2", dOn, dTot, nOn, nTot)
 	}
 }

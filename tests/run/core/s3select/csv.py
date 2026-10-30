@@ -19,8 +19,7 @@
 import io
 import os
 
-from obstor import Obstor
-from obstor.select import (COMPRESSION_TYPE_NONE, FILE_HEADER_INFO_NONE,
+from select_models import (COMPRESSION_TYPE_NONE, FILE_HEADER_INFO_NONE,
                           JSON_TYPE_DOCUMENT, QUOTE_FIELDS_ALWAYS,
                           QUOTE_FIELDS_ASNEEDED, CSVInputSerialization,
                           CSVOutputSerialization, JSONInputSerialization,

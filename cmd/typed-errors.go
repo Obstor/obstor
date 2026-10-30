@@ -45,6 +45,9 @@ var errDataTooSmall = errors.New("object size smaller than expected")
 // errServerNotInitialized - server not initialized.
 var errServerNotInitialized = errors.New("server not initialized, please try again")
 
+// errFleetStoreDisabled - server runs without --web-address, so no metrics
+var errFleetStoreDisabled = errors.New("traffic metrics need the fleet store, start the server with --web-address")
+
 // errRPCAPIVersionUnsupported - unsupported rpc API version.
 var errRPCAPIVersionUnsupported = errors.New("unsupported rpc API version")
 

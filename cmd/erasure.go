@@ -198,6 +198,10 @@ func getDisksInfo(disks []StorageAPI, endpoints []string) (disksInfo []madmin.Di
 				Healing:        info.Healing,
 				State:          diskErrToDriveState(err),
 			}
+			// A failed DiskInfo returns no endpoint
+			if di.Endpoint == "" {
+				di.Endpoint = endpoints[index]
+			}
 			di.PoolIndex, di.SetIndex, di.DiskIndex = disks[index].GetDiskLoc()
 			if info.Healing {
 				if hi := disks[index].Healing(); hi != nil {

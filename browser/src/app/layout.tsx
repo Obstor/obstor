@@ -1,25 +1,7 @@
 import type { Metadata } from "next";
-import { DM_Sans, JetBrains_Mono, Outfit } from "next/font/google";
+import { LeaveGuard } from "@/components/LeaveGuard";
+import { fontVars } from "./fonts";
 import "./globals.css";
-
-const outfit = Outfit({
-  variable: "--font-outfit",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  display: "swap",
-});
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Obstor Dashboard",
@@ -28,8 +10,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${outfit.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={`antialiased ${fontVars}`}>
+      <body className="bg-void font-body text-stone-100 selection:bg-amber-500 selection:text-black">
+        <LeaveGuard>{children}</LeaveGuard>
+      </body>
     </html>
   );
 }

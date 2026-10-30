@@ -1,18 +1,33 @@
 import { cookies } from "next/headers";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { cache } from "react";
+import type { AttentionItem } from "./attention";
+import { sessionExpired } from "./login";
+import { parseRPCResponse, RPCError } from "./rpc-response";
+
+export { RPCError } from "./rpc-response";
 
 const RPC_ENDPOINT = process.env.OBSTOR_ENDPOINT || "http://localhost:9000";
 
 export interface BucketEntry {
   name: string;
   creationDate: string;
+  size: number | null;
+  objects: number | null;
 }
 
-// Cache list of buckets for layout and pages
-export const listBuckets = cache(async (): Promise<BucketEntry[]> => {
-  const r = await rpc<{ buckets: BucketEntry[] | null }>("ListBuckets");
-  return r.buckets ?? [];
+export interface BucketList {
+  buckets: BucketEntry[];
+  usageAsOf: string;
+}
+
+// Size and objects stay null until first scan
+export const bucketList = cache(async (): Promise<BucketList> => {
+  const r = await rpc<{ buckets: BucketEntry[] | null; usageAsOf?: string }>("ListBuckets");
+  return { buckets: r.buckets ?? [], usageAsOf: r.usageAsOf ?? "" };
 });
+
+export const listBuckets = cache(async (): Promise<BucketEntry[]> => (await bucketList()).buckets);
 
 export async function rpc<T = unknown>(
   method: string,
@@ -20,6 +35,7 @@ export async function rpc<T = unknown>(
 ): Promise<T> {
   const cookieStore = await cookies();
   const token = cookieStore.get("obstor_token")?.value;
+  if (!token) throw new RPCError("Unauthorized", "WebTokenMissing");
 
   const res = await fetch(`${RPC_ENDPOINT}/obstor/webrpc`, {
     method: "POST",
@@ -37,52 +53,122 @@ export async function rpc<T = unknown>(
     cache: "no-store",
   });
 
-  const text = await res.text();
+  return parseRPCResponse<T>(res.status, await res.text());
+}
 
-  if (res.status === 401 || res.status === 403) {
-    throw new Error("Unauthorized");
+// Keep framework redirects and wipe rejected sessions before login
+export function rethrowSessionError(err: unknown): void {
+  unstable_rethrow(err);
+  if (err instanceof RPCError && sessionExpired(err.code)) redirect("/sign-out");
+}
+
+// Rejected session ends the request
+export async function rpcSettled<T extends readonly unknown[] | []>(calls: T) {
+  const results = await Promise.allSettled(calls);
+  for (const result of results) {
+    if (result.status === "rejected") rethrowSessionError(result.reason);
   }
+  return results;
+}
 
-  let data: { result?: T; error?: { message?: string } };
+export interface ServerInfo {
+  ObstorVersion: string;
+  releaseTag: string;
+  canSeeFleet: boolean;
+  canSeeSettings: boolean;
+  region: string;
+  mode: "fs" | "erasure" | "backend";
+  sftpEnabled: boolean;
+  account: "root" | "temporary" | "service" | "iam";
+  metrics: boolean;
+  usage: boolean;
+  // Settings tier only
+  sftpAddress: string;
+  ObstorPlatform: string;
+  ObstorRuntime: string;
+  commit: string;
+  startedAt: string;
+  kms: boolean;
+  autoEncryption: boolean;
+  tls: boolean;
+  trustedProxies: boolean;
+}
+
+// Failed call hides fleet controls
+export const serverInfo = cache(async (): Promise<ServerInfo | null> => {
   try {
-    data = JSON.parse(text);
+    return await rpc<ServerInfo>("ServerInfo");
+  } catch (err) {
+    rethrowSessionError(err);
+    return null;
+  }
+});
+
+// One Attention call per request
+export const attention = cache(async (): Promise<AttentionItem[]> => {
+  try {
+    return (await rpc<{ items: AttentionItem[] | null }>("Attention")).items ?? [];
+  } catch (err) {
+    rethrowSessionError(err);
+    return [];
+  }
+});
+
+export type AccessLabel = "Private" | "Public read" | "Public read/write" | "Public write";
+
+const ACCESS_LABELS: Record<string, AccessLabel> = {
+  none: "Private",
+  readonly: "Public read",
+  readwrite: "Public read/write",
+  writeonly: "Public write",
+};
+
+// One GetBucketPolicy per bucket
+export async function bucketAccess(names: string[]): Promise<Record<string, AccessLabel | null>> {
+  const res = await rpcSettled(
+    names.map((bucketName) =>
+      rpc<{ policy: string }>("GetBucketPolicy", { bucketName, prefix: "" }),
+    ),
+  );
+  return Object.fromEntries(
+    names.map((name, i) => {
+      const r = res[i];
+      return [
+        name,
+        r.status === "fulfilled" ? (ACCESS_LABELS[r.value.policy || "none"] ?? null) : null,
+      ];
+    }),
+  );
+}
+
+// Public S3 host or RPC_ENDPOINT for internal
+export function publicHost(): string {
+  return process.env.OBSTOR_HOST || "localhost:9000";
+}
+
+export function publicURL(): string {
+  const host = publicHost();
+  return host.includes("://") ? host : `${new URL(RPC_ENDPOINT).protocol}//${host}`;
+}
+
+export function rpcEndpoint(): string {
+  return RPC_ENDPOINT;
+}
+
+// Display-only since server verifies token on every RPC
+export async function sessionAccessKey(): Promise<string> {
+  const token = (await cookies()).get("obstor_token")?.value ?? "";
+  try {
+    const claims: unknown = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    );
+    return typeof claims === "object" &&
+      claims !== null &&
+      "accessKey" in claims &&
+      typeof claims.accessKey === "string"
+      ? claims.accessKey
+      : "";
   } catch {
-    throw new Error(`Server returned non-JSON: ${res.status}`);
+    return "";
   }
-
-  if (data.error) throw new Error(data.error.message || "RPC error");
-  return data.result as T;
-}
-
-export function humanSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / 1024 ** i).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-export function humanCount(n: number): string {
-  if (n < 1000) return String(n);
-  const units = [
-    { v: 1e9, s: "B" },
-    { v: 1e6, s: "M" },
-    { v: 1e3, s: "K" },
-  ];
-  for (const u of units) {
-    if (n >= u.v) {
-      const scaled = (n / u.v).toFixed(1).replace(/\.0$/, "");
-      return `${scaled}${u.s}`;
-    }
-  }
-  return String(n);
-}
-
-export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

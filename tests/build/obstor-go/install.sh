@@ -36,4 +36,4 @@ sed -i.bak '/testStatObjectWithVersioning()/a\
 ' "${test_run_dir}/main.go"
 
 # Build the combined file
-(cd "$test_run_dir" && go mod tidy -compat=1.21 && CGO_ENABLED=0 go build --ldflags "-s -w" -o obstor-go main.go)
+(cd "$test_run_dir" && go get -u "github.com/obstor/obstor-go/v7@${OBSTOR_GO_VERSION}" && go mod tidy && CGO_ENABLED=0 go build --ldflags "-s -w" -o obstor-go main.go)

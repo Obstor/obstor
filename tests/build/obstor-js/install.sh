@@ -16,24 +16,10 @@
 #  limitations under the License.
 #
 
-# Checkout at /tests/test-run/obstor-js/
-# During run of the test copy it to the the /tests/run/core/obstor-js/obstor-js
-
-install_path="./test-run/obstor-js/"
-rm -rf $install_path
-
-git clone https://github.com/obstor/obstor-js.git $install_path
-
-cd $install_path || exit 0
-
-# Get new tags from remote
-git fetch --tags
-# Get latest tag name
-# shellcheck disable=SC2046
-LATEST=$(git describe --tags $(git rev-list --tags --max-count=1))
-
-echo "Using obstor-js RELEASE $LATEST"
-
-git checkout "${LATEST}" --force &>/dev/null
-
-npm install --quiet &>/dev/null
+set -euo pipefail
+build_dir="$(cd "$(dirname "$0")" && pwd)"
+source "$build_dir/../sdk-source.sh"
+install_path="${TESTS_ROOT_DIR:-/tests}/test-run/obstor-js"
+mkdir -p "$(dirname "$install_path")"
+# Installation expects a fresh image or a new source directory.
+checkout_sdk obstor-js "$install_path" "${OBSTOR_JS_REF:-$(saved_sdk_ref "$build_dir")}"

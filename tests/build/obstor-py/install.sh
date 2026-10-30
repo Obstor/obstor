@@ -16,9 +16,13 @@
 #  limitations under the License.
 #
 
-OBSTOR_PY_VERSION="7.2.20"
-test_run_dir="$TESTS_RUN_CORE_DIR/obstor-py"
-
-pip3 install --break-system-packages --user faker
-pip3 install --break-system-packages --no-cache-dir obstor=="${OBSTOR_PY_VERSION}"
-$WGET --output-document="$test_run_dir/tests.py" "https://raw.githubusercontent.com/obstor/obstor-py/${OBSTOR_PY_VERSION}/tests/functional/tests.py"
+set -euo pipefail
+build_dir="$(cd "$(dirname "$0")" && pwd)"
+source "$build_dir/../sdk-source.sh"
+source_dir="$(mktemp -d)"
+trap 'rm -rf "$source_dir"' EXIT
+checkout_sdk obstor-py "$source_dir/sdk" "${OBSTOR_PY_REF:-$(saved_sdk_ref "$build_dir")}"
+python3 -m pip install --break-system-packages --no-cache-dir \
+    'faker==37.1.0' "$source_dir/sdk"
+cp "$source_dir/sdk/tests/functional/tests.py" "$TESTS_RUN_CORE_DIR/obstor-py/tests.py"
+python3 -c 'import obstor, faker'

@@ -9,7 +9,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
     // Apply the application plugin to add support for building a CLI application in Java.
     application
-    id("com.gradleup.shadow") version "9.2.2"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 repositories {
@@ -19,13 +19,14 @@ repositories {
 
 dependencies {
     // AWS SDK dependencies
-    implementation(platform("software.amazon.awssdk:bom:2.38.1"))
+    implementation(platform("software.amazon.awssdk:bom:2.55.6"))
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:netty-nio-client")
     implementation("software.amazon.awssdk:aws-crt-client")
 
     // jackson dependency
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.20.0")
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
+    implementation("com.fasterxml.jackson.core:jackson-databind")
 }
 
 tasks.withType<ShadowJar> {

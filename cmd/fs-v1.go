@@ -230,6 +230,7 @@ func (fs *FSObjects) StorageInfo(ctx context.Context) (StorageInfo, []error) {
 				UsedSpace:      di.Used,
 				AvailableSpace: di.Free,
 				DrivePath:      fs.fsPath,
+				State:          madmin.DriveStateOk,
 			},
 		},
 	}
@@ -407,6 +408,13 @@ func (fs *FSObjects) MakeBucketWithLocation(ctx context.Context, bucket string, 
 		return BucketNameInvalid{Bucket: bucket}
 	}
 
+	lock := bucketMetadataLock(fs, bucket)
+	ctx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+
 	defer ObjectPathUpdated(bucket + slashSeparator)
 	atomic.AddInt64(&fs.activeIOCount, 1)
 	defer func() {
@@ -446,7 +454,13 @@ func (fs *FSObjects) GetBucketPolicy(ctx context.Context, bucket string) (*polic
 
 // SetBucketPolicy - only needed for FS in NAS mode
 func (fs *FSObjects) SetBucketPolicy(ctx context.Context, bucket string, p *policy.Policy) error {
-	meta, err := loadBucketMetadata(ctx, fs, bucket)
+	lock := bucketMetadataLock(fs, bucket)
+	ctx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+	meta, err := loadBucketMetadataLocked(ctx, fs, bucket)
 	if err != nil {
 		return err
 	}
@@ -462,7 +476,13 @@ func (fs *FSObjects) SetBucketPolicy(ctx context.Context, bucket string, p *poli
 
 // DeleteBucketPolicy - only needed for FS in NAS mode
 func (fs *FSObjects) DeleteBucketPolicy(ctx context.Context, bucket string) error {
-	meta, err := loadBucketMetadata(ctx, fs, bucket)
+	lock := bucketMetadataLock(fs, bucket)
+	ctx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+	meta, err := loadBucketMetadataLocked(ctx, fs, bucket)
 	if err != nil {
 		return err
 	}

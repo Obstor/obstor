@@ -5,6 +5,10 @@ This directory serves as the location for Testing tests for s3select features.  
 ## Adding new tests
 New tests are added into `s3select/tests.py` as new functions.
 
+The runner uses `obstor.models.SelectObjectContentRequest` from the pinned Python SDK. `select_models.py` maps its nested serialization types and protocol enum values. SQL mismatches and service failures propagate so a failed suite cannot report PASS.
+
+Run `python3 request_models_test.py` to check the installed SDK's request serialization and runner failure handling without a server. For source-only validation, use `python3 request_models_test.py --sdk-source /path/to/obstor-py`. The source mode loads real model modules while bypassing the package initializer's admin crypto imports, so it does not validate a complete installation.
+
 ## Running tests manually
 - Set environment variables `TESTS_DATA_DIR`, `TESTS_MODE`, `SERVER_ENDPOINT`, `ACCESS_KEY`, `SECRET_KEY`, `SERVER_REGION` and `ENABLE_HTTPS`
 - Call `run.sh` with output log file and error log file. for example

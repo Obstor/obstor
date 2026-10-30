@@ -590,10 +590,26 @@ func (api objectAPIHandlers) DeleteMultipleObjectsHandler(w http.ResponseWriter,
 	}
 
 	var deleteErrors []DeleteError
+	denied := 0
 	for _, dErr := range dErrs {
 		if dErr.Code != "" {
 			deleteErrors = append(deleteErrors, dErr)
 		}
+		if dErr.Code == errorCodes.ToAPIErr(ErrAccessDenied).Code {
+			denied++
+		}
+	}
+
+	deleted := 0
+	for _, dobj := range deletedObjects {
+		if dobj.ObjectName != "" {
+			deleted++
+		}
+	}
+	logger.GetReqInfo(ctx).SetTags("count", deleted)
+	if denied == len(dErrs) {
+		// Keys refused, counts denied despite HTTP 200
+		logger.GetReqInfo(ctx).SetTags("denied", true)
 	}
 
 	// Generate response
@@ -679,6 +695,16 @@ func (api objectAPIHandlers) PutBucketHandler(w http.ResponseWriter, r *http.Req
 	if s3Error := checkRequestAuthType(ctx, r, policy.CreateBucketAction, bucket, ""); s3Error != ErrNone {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
 		return
+	}
+
+	// Lock buckets and versioning permissions
+	if objectLockEnabled {
+		for _, action := range []iampolicy.Action{iampolicy.PutBucketObjectLockConfigurationAction, iampolicy.PutBucketVersioningAction} {
+			if s3Error := isPutActionAllowed(ctx, getRequestAuthType(r), bucket, "", r, action); s3Error != ErrNone {
+				writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
+				return
+			}
+		}
 	}
 
 	// Parse incoming location constraint.
@@ -933,6 +959,10 @@ func (api objectAPIHandlers) PostPolicyBucketHandler(w http.ResponseWriter, r *h
 			return
 		}
 	}
+
+	// Read signer and key form for ReqInfo
+	reqInfo := logger.GetReqInfo(ctx)
+	reqInfo.AccessKey, reqInfo.ObjectName = cred.AccessKey, object
 
 	policyBytes, err := base64.StdEncoding.DecodeString(formValues.Get("Policy"))
 	if err != nil {
@@ -1399,7 +1429,7 @@ func (api objectAPIHandlers) PutBucketTaggingHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	tags, err := tags.ParseBucketXML(io.LimitReader(r.Body, r.ContentLength))
+	reqTags, err := tags.ParseBucketXML(io.LimitReader(r.Body, r.ContentLength))
 	if err != nil {
 		apiErr := errorCodes.ToAPIErr(ErrMalformedXML)
 		apiErr.Description = err.Error()
@@ -1407,23 +1437,24 @@ func (api objectAPIHandlers) PutBucketTaggingHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	// The __obstor_ access toggles for S3/SFTP
-	for k := range tags.ToMap() {
-		if strings.HasPrefix(k, obstorReservedTagPrefix) {
-			apiErr := errorCodes.ToAPIErr(ErrAccessDenied)
-			apiErr.Description = "tag keys with the reserved prefix " + obstorReservedTagPrefix + " cannot be set through the tagging API"
-			writeErrorResponse(ctx, w, apiErr, r.URL, guessIsBrowserReq(r))
-			return
+	// Reserved keys return 403 after parsing
+	user := reqTags.ToMap()
+	if err = checkUserBucketTags(user); err != nil {
+		apiErr := APIError{
+			Code:           "InvalidTag",
+			Description:    err.Error(),
+			HTTPStatusCode: http.StatusBadRequest,
 		}
-	}
-
-	configData, err := xml.Marshal(tags)
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+		if err == errReservedBucketTag {
+			apiErr = errorCodes.ToAPIErr(ErrAccessDenied)
+			apiErr.Description = err.Error()
+		}
+		writeErrorResponse(ctx, w, apiErr, r.URL, guessIsBrowserReq(r))
 		return
 	}
 
-	if err = globalBucketMetadataSys.Update(bucket, bucketTaggingConfig, configData); err != nil {
+	// Keep protocol metadata when replacing user tags
+	if err = replaceUserBucketTags(bucket, user); err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
 	}
@@ -1454,7 +1485,17 @@ func (api objectAPIHandlers) GetBucketTaggingHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	config, err := globalBucketMetadataSys.GetTaggingConfig(bucket)
+	// Hide toggle keys
+	user, err := userBucketTags(bucket)
+	if err == nil && len(user) == 0 {
+		err = BucketTaggingNotFound{Bucket: bucket}
+	}
+	if err != nil {
+		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+		return
+	}
+
+	config, err := tags.NewTags(user, false)
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
@@ -1491,7 +1532,8 @@ func (api objectAPIHandlers) DeleteBucketTaggingHandler(w http.ResponseWriter, r
 		return
 	}
 
-	if err := globalBucketMetadataSys.Update(bucket, bucketTaggingConfig, nil); err != nil {
+	// Delete user tags, keep protocol metadata
+	if err := replaceUserBucketTags(bucket, nil); err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
 	}

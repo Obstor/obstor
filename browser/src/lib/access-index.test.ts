@@ -1,6 +1,6 @@
 // Run via node --experimental-strip-types src/lib/access-index.test.ts
 import assert from "node:assert/strict";
-import { buildAccessIndex, policyExclusiveTo, policyGrants } from "./access-index.ts";
+import { buildAccessIndex, newUserError, policyExclusiveTo, policyGrants } from "./access-index.ts";
 
 const pol = (name: string, statements: unknown[]) => ({
   name,
@@ -81,5 +81,20 @@ assert.deepEqual(U("root-ish").buckets, []);
 // Reverse index the delete confirm
 assert.deepEqual(P("media-full").holders, ["anna", "ghosted"]);
 assert.deepEqual(P("logs-glob").holders, []);
+
+// Blank generates key, typed follow rules
+const taken = ["anna", "orphan"];
+assert.equal(newUserError("", taken), null);
+assert.equal(newUserError("   ", taken), null);
+assert.equal(newUserError("ab", taken), "Access keys are 3 to 20 characters.");
+assert.equal(newUserError("a".repeat(21), taken), "Access keys are 3 to 20 characters.");
+assert.equal(newUserError("a".repeat(20), taken), null);
+assert.equal(newUserError("abc", taken), null);
+assert.equal(newUserError("has space", taken), "Access keys cannot contain spaces.");
+assert.equal(newUserError("tab\tkey", taken), "Access keys cannot contain spaces.");
+assert.equal(newUserError("anna", taken), "A user with that access key already exists.");
+assert.equal(newUserError("  anna ", taken), "A user with that access key already exists.");
+assert.equal(newUserError("Anna", taken), null);
+assert.equal(newUserError("new-user", taken), null);
 
 console.log("access-index: all assertions passed");

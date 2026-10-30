@@ -55,6 +55,12 @@ func SetTrustedProxies(entries []string) error {
 	return nil
 }
 
+// Is one or more trusted proxy CIDR configured
+func TrustedProxiesSet() bool {
+	p := trustedProxies.Load()
+	return p != nil && len(*p) > 0
+}
+
 // Check if address is in the allowed list
 func peerIsTrustedProxy(remoteAddr string) bool {
 	netsp := trustedProxies.Load()

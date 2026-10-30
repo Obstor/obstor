@@ -1,5 +1,5 @@
 # :lobster: Obstor Quickstart Guide
-[![Obstor](https://raw.githubusercontent.com/obstor/obstor/main/.github/logo.svg?sanitize=true)](https://obster.net)
+![Obstor Dashboard](docs/screenshots/dashboard.svg)
 
 Obstor is a high-performance object storage system supporting popular transfer protocols like S3 and SFTP, making it suitable for building high-performance infrastructure for machine learning, analytics, and application data workloads. Obstor is based on the 2021 Apache-licensed release of Obstor, prior to the project's transition to AGPL and later archival.
 
@@ -108,7 +108,7 @@ for more complete documentation.
 
 # Install from Source
 
-Use the following commands to compile and run a standalone Obstor server from source. Source installation is only intended for developers and advanced users. If you do not have a working Golang environment, please follow [How to install Golang](https://golang.org/doc/install). Recommended version is [go1.26](https://golang.org/dl/#stable) or newer.
+Use the following commands to compile and run a standalone Obstor server from source. Source installation is only intended for developers and advanced users. If you do not have a working Golang environment, please follow [How to install Golang](https://golang.org/doc/install). Recommended version is [go1.27](https://golang.org/dl/#stable) or newer.
 
 ```sh
 GO111MODULE=on go get github.com/obstor/obstor
@@ -197,9 +197,7 @@ The above statement is also valid for all gateway backends.
 ## Test using Browser Dashboard
 Obstor Server comes with an embedded web based object browser. Point your web browser to http://127.0.0.1:9000 to ensure your server has started successfully.
 
-![Dashboard](docs/screenshots/dashboard.svg)
-
-![Object Browser](https://raw.githubusercontent.com/obstor/obstor/main/docs/screenshots/browser.png)
+![Object Browser](docs/screenshots/browser.svg)
 
 ## Test using an S3 client
 Obstor is S3-compatible, so any S3 client works for data access. `rclone` is a modern alternative to UNIX commands like ls, cat, cp, sync, etc. against S3-compatible storage; `rsync` works over an S3 mount (for example an `rclone mount` or `s3fs` mount); the AWS CLI (`aws s3`) also works. Point the client at the server endpoint with a root or user credential.

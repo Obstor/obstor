@@ -6,22 +6,22 @@
     "dev": "next dev --port 9001",
     "build": "next build",
     "start": "next start",
-    "format": "biome check --write; tsc --noEmit"
+    "format": "biome check --write && tsc --noEmit"
   },
   "dependencies": {
-    "next": "^16.3.8",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@iconify/json": "^2.2.533",
+    "@biomejs/biome": "^2.6.3",
+    "@iconify/json": "^2.2.549",
     "@iconify/tailwind4": "^1.2.3",
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "postcss": "^8.5.28",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }

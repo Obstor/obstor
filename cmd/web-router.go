@@ -18,14 +18,21 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
 	"github.com/obstor/obstor/browser"
+	xjwt "github.com/obstor/obstor/cmd/jwt"
 	"github.com/obstor/obstor/cmd/logger"
 	jsonrpc "github.com/obstor/obstor/pkg/rpc"
 	"github.com/obstor/obstor/pkg/rpc/json2"
@@ -52,6 +59,80 @@ const assetPrefix = "production"
 // specialAssets are files which are unique files not embedded inside index_bundle.js.
 const specialAssets = "index_bundle.*.js|loader.css|logo.svg|firefox.png|safari.png|chrome.png|favicon-16x16.png|favicon-32x32.png|favicon-96x96.png"
 
+// RPC body limit before json2 decodes unauthenticated args
+const webRPCMaxBodySize = 1 << 20
+
+// Buffer up to body limit, reply HTTP 400 and json2 error above it
+func capWebRPCBody(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webRPCMaxBodySize))
+		if err != nil {
+			code := "IncompleteBody"
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				code = "EntityTooLarge"
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": json2.Version,
+				"id":      nil,
+				"error":   &json2.Error{Code: json2.E_PARSE, Message: err.Error(), Data: map[string]string{"code": code}},
+			})
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		h.ServeHTTP(w, r)
+	})
+}
+
+type webRPCAuthKey struct{}
+
+type webRPCAuth struct {
+	claims *xjwt.MapClaims
+	err    error
+}
+
+// Authenticate before SetAuth rotates token's signing secret
+func withWebRPCAuth(r *http.Request) *http.Request {
+	claims, _, err := webRequestAuthenticate(r)
+	return withWebActivityGate(r.WithContext(context.WithValue(r.Context(), webRPCAuthKey{}, webRPCAuth{claims, err})))
+}
+
+// Limit body, then authenticate before handler
+func webRPCHandler(s *jsonrpc.Server) http.Handler {
+	return capWebRPCBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(w, withWebRPCAuth(r))
+	}))
+}
+
+// After RPC, set audit vars, trace, audit log, then activity log
+func webRPCAfter(ri *jsonrpc.RequestInfo) {
+	if ri == nil {
+		return
+	}
+	auth, ok := ri.Request.Context().Value(webRPCAuthKey{}).(webRPCAuth)
+	if !ok {
+		auth.err = errNoAuthToken
+	}
+	claims, authErr := auth.claims, auth.err
+	bucketName, objectName := extractBucketObject(ri.Args)
+	ri.Request = mux.SetURLVars(ri.Request, map[string]string{
+		"bucket": bucketName,
+		"object": objectName,
+	})
+	if globalTrace.NumSubscribers() > 0 {
+		globalTrace.Publish(WebTrace(ri))
+	}
+	ctx := newContext(ri.Request, ri.ResponseWriter, ri.Method)
+	logger.AuditLog(ctx, ri.ResponseWriter, ri.Request, claims.Map())
+	accessKey := ""
+	if authErr == nil {
+		accessKey = claims.AccessKey
+	}
+	recordWebActivity(ctx, strings.TrimPrefix(ri.Method, "web."), ri.Args, accessKey, webActivityGatePassed(ri.Request), ri.Error)
+}
+
 // registerWebRPCRouter register JSON-RPC upload/download handlers
 func registerWebRPCRouter(router *mux.Router) error {
 	web := &webAPIHandlers{
@@ -65,27 +146,13 @@ func registerWebRPCRouter(router *mux.Router) error {
 	webRPC := jsonrpc.NewServer()
 	webRPC.RegisterCodec(codec, "application/json")
 	webRPC.RegisterCodec(codec, "application/json; charset=UTF-8")
-	webRPC.RegisterAfterFunc(func(ri *jsonrpc.RequestInfo) {
-		if ri != nil {
-			claims, _, _ := webRequestAuthenticate(ri.Request)
-			bucketName, objectName := extractBucketObject(ri.Args)
-			ri.Request = mux.SetURLVars(ri.Request, map[string]string{
-				"bucket": bucketName,
-				"object": objectName,
-			})
-			if globalTrace.NumSubscribers() > 0 {
-				globalTrace.Publish(WebTrace(ri))
-			}
-			ctx := newContext(ri.Request, ri.ResponseWriter, ri.Method)
-			logger.AuditLog(ctx, ri.ResponseWriter, ri.Request, claims.Map())
-		}
-	})
+	webRPC.RegisterAfterFunc(webRPCAfter)
 
 	if err := webRPC.RegisterService(web, "web"); err != nil {
 		return err
 	}
 
-	webBrowserRouter.Methods(http.MethodPost).Path("/webrpc").Handler(webRPC)
+	webBrowserRouter.Methods(http.MethodPost).Path("/webrpc").Handler(webRPCHandler(webRPC))
 	webBrowserRouter.Methods(http.MethodPut).Path("/upload/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.Upload))
 	webBrowserRouter.Methods(http.MethodGet).Path("/download/{bucket}/{object:.+}").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.Download))
 	webBrowserRouter.Methods(http.MethodPost).Path("/zip").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.DownloadZip))
@@ -111,21 +178,7 @@ func registerWebRouter(router *mux.Router) error {
 	webRPC := jsonrpc.NewServer()
 	webRPC.RegisterCodec(codec, "application/json")
 	webRPC.RegisterCodec(codec, "application/json; charset=UTF-8")
-	webRPC.RegisterAfterFunc(func(ri *jsonrpc.RequestInfo) {
-		if ri != nil {
-			claims, _, _ := webRequestAuthenticate(ri.Request)
-			bucketName, objectName := extractBucketObject(ri.Args)
-			ri.Request = mux.SetURLVars(ri.Request, map[string]string{
-				"bucket": bucketName,
-				"object": objectName,
-			})
-			if globalTrace.NumSubscribers() > 0 {
-				globalTrace.Publish(WebTrace(ri))
-			}
-			ctx := newContext(ri.Request, ri.ResponseWriter, ri.Method)
-			logger.AuditLog(ctx, ri.ResponseWriter, ri.Request, claims.Map())
-		}
-	})
+	webRPC.RegisterAfterFunc(webRPCAfter)
 
 	// Register RPC handlers with server
 	if err := webRPC.RegisterService(web, "web"); err != nil {
@@ -133,7 +186,7 @@ func registerWebRouter(router *mux.Router) error {
 	}
 
 	// RPC handler at URI - /obstor/webrpc
-	webBrowserRouter.Methods(http.MethodPost).Path("/webrpc").Handler(webRPC)
+	webBrowserRouter.Methods(http.MethodPost).Path("/webrpc").Handler(webRPCHandler(webRPC))
 	webBrowserRouter.Methods(http.MethodPut).Path("/upload/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.Upload))
 
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally

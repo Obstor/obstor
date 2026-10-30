@@ -87,6 +87,46 @@ func TestGetSourceIPTrustedProxyGate(t *testing.T) {
 	}
 }
 
+// Valid nonempty config list required
+func TestTrustedProxiesSet(t *testing.T) {
+	defer func() { _ = SetTrustedProxies(nil) }()
+
+	trustedProxies.Store(nil)
+	if TrustedProxiesSet() {
+		t.Fatal("never configured: got true, want false")
+	}
+
+	cases := []struct {
+		entries []string
+		want    bool
+	}{
+		{nil, false},
+		{[]string{"10.0.0.0/8"}, true},
+		{[]string{" ", ""}, false},
+		{[]string{"127.0.0.1"}, true},
+		{[]string{}, false},
+	}
+	for _, c := range cases {
+		if err := SetTrustedProxies(c.entries); err != nil {
+			t.Fatalf("SetTrustedProxies(%q): %v", c.entries, err)
+		}
+		if got := TrustedProxiesSet(); got != c.want {
+			t.Errorf("SetTrustedProxies(%q) then TrustedProxiesSet() = %v, want %v", c.entries, got, c.want)
+		}
+	}
+
+	// Rejected list keeps previous config
+	if err := SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTrustedProxies([]string{"not-a-cidr"}); err == nil {
+		t.Fatal("SetTrustedProxies(not-a-cidr): got nil error, want a parse error")
+	}
+	if !TrustedProxiesSet() {
+		t.Fatal("after a rejected list: got false, want the earlier list still set")
+	}
+}
+
 // Check forwarding headers are parsed correctly.
 func TestGetSourceIPFromHeaders(t *testing.T) {
 	headers := []headerTest{

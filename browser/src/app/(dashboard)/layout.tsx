@@ -1,72 +1,69 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { Header } from "@/components/Header";
-import { Sidebar } from "@/components/Sidebar";
+import { AttentionProvider } from "@/components/AttentionProvider";
+import { BucketProvider } from "@/components/BucketProvider";
+import { Shell } from "@/components/Shell";
 import { getAccessBadgeAction } from "@/lib/actions";
-import { type BucketEntry, humanSize, listBuckets, rpc } from "@/lib/rpc";
-
-interface StorageResult {
-  used: number;
-}
-
-interface ServerResult {
-  ObstorVersion: string;
-  ObstorPlatform: string;
-}
+import { health } from "@/lib/chart";
+import { nodes, storage } from "@/lib/fleet";
+import { versionLabel } from "@/lib/format";
+import {
+  attention,
+  type BucketEntry,
+  listBuckets,
+  publicHost,
+  rethrowSessionError,
+  serverInfo,
+  sessionAccessKey,
+} from "@/lib/rpc";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("obstor_token");
-  if (!token) redirect("/login");
+  if (!(await cookies()).get("obstor_token")) redirect("/login");
 
   let buckets: BucketEntry[] = [];
-  let storageUsed = "0 B";
-  let serverVersion = "";
-  let serverPlatform = "";
-  let authFailed = false;
-
   try {
     buckets = await listBuckets();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "";
-    if (msg.includes("Unauthorized") || msg.includes("token")) authFailed = true;
+    rethrowSessionError(err);
   }
 
-  if (authFailed) {
-    redirect("/login");
-  }
-
-  try {
-    const storageRes = await rpc<StorageResult>("StorageInfo");
-    storageUsed = humanSize(storageRes.used);
-  } catch {
-    // non-critical
-  }
-
-  try {
-    const serverRes = await rpc<ServerResult>("ServerInfo");
-    serverVersion = serverRes.ObstorVersion;
-    serverPlatform = serverRes.ObstorPlatform;
-  } catch {
-    // non-critical
-  }
-
-  const access = await getAccessBadgeAction();
+  const [info, access, accessKey, items] = await Promise.all([
+    serverInfo(),
+    getAccessBadgeAction(),
+    sessionAccessKey(),
+    attention(),
+  ]);
+  const canSeeFleet = info?.canSeeFleet ?? false;
+  const [nodeRes, storageRes] = await Promise.all([
+    canSeeFleet ? nodes() : null,
+    info?.usage ? storage() : null,
+  ]);
+  const h = nodeRes?.ok ? health(nodeRes.value) : null;
+  const used = storageRes?.ok && storageRes.value.usageAsOf ? storageRes.value.used : null;
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        buckets={buckets}
-        storageUsed={storageUsed}
-        bucketCount={buckets.length}
-        serverVersion={serverVersion}
-        serverPlatform={serverPlatform}
-        access={access}
-      />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto bg-void p-6">{children}</main>
-      </div>
-    </div>
+    <BucketProvider buckets={buckets.map((b) => b.name)}>
+      <AttentionProvider accessKey={accessKey} initial={items}>
+        <Shell
+          buckets={buckets}
+          used={used}
+          nav={{
+            canManage: access.canManage,
+            noPolicy: access.noPolicy,
+            canSeeFleet,
+            attention: !!h && (h.nodesOffline > 0 || h.drivesOffline > 0),
+          }}
+          host={publicHost()}
+          server={{
+            version: info ? versionLabel(info.releaseTag) : "",
+            region: info?.region ?? "",
+            mode: info?.mode ?? "",
+          }}
+          user={{ accessKey, account: info?.account ?? "" }}
+        >
+          {children}
+        </Shell>
+      </AttentionProvider>
+    </BucketProvider>
   );
 }

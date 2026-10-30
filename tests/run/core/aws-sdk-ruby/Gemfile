@@ -1,0 +1,6 @@
+source 'https://rubygems.org'
+ruby '>= 2.7'
+
+# Ubuntu 24.04's Ruby 3.2 supports this locked dependency set.
+gem 'aws-sdk-s3', '1.221.0'
+gem 'multipart_body', '0.2.1'

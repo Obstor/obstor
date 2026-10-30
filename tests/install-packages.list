@@ -10,6 +10,7 @@ ca-certificates-mono
 libunwind8
 ruby
 ruby-dev
+build-essential
 ruby-bundler
 php
 php-curl

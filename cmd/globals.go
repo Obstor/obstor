@@ -223,6 +223,12 @@ var (
 	// Aggregates fleet stats on the controller node, nil off-controller.
 	globalFleetStore FleetStore
 
+	// This node's activity log
+	globalActivityLog *activityLog
+
+	// Capacity history sampled by scanner leader
+	globalCapacityHistory *capacityHistory
+
 	// Time when the server is started
 	globalBootTime = UTCNow()
 

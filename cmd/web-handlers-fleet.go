@@ -44,6 +44,7 @@ type RegionStat struct {
 	Region string `json:"region"`
 	Used   uint64 `json:"used"`
 	Total  uint64 `json:"total"`
+	Free   uint64 `json:"free"`
 }
 
 // Regions breakdown payload
@@ -53,11 +54,16 @@ type FleetRegionsRep struct {
 	UIVersion string       `json:"uiVersion"`
 }
 
-// Daily bandwidth/ops payload
+// Bandwidth and operation counts
+type FleetMetricsArgs struct {
+	WindowHours int `json:"windowHours"`
+}
+
 type FleetMetricsRep struct {
 	Bandwidth   []BWBucket  `json:"bandwidth"`
 	Ops         []OpsBucket `json:"ops"`
 	WindowHours int         `json:"windowHours"`
+	Since       string      `json:"since"`
 	UIVersion   string      `json:"uiVersion"`
 }
 
@@ -86,7 +92,7 @@ func aggStorage(views []MemberView) FleetStorageInfoRep {
 	return r
 }
 
-// Online members by region with aggregate used and total bytes.
+// Online members by region with used and free bytes.
 func regionStats(views []MemberView) []RegionStat {
 	byRegion := map[string]*RegionStat{}
 	for _, v := range views {
@@ -100,6 +106,7 @@ func regionStats(views []MemberView) []RegionStat {
 		}
 		rs.Used += v.Used
 		rs.Total += v.Total
+		rs.Free += v.Free
 	}
 	out := make([]RegionStat, 0, len(byRegion))
 	for _, rs := range byRegion {
@@ -140,15 +147,16 @@ func fleetServersPage(views []MemberView, offset, limit int) ([]FleetServerRow, 
 // Only a caller allowed to list every bucket may read them
 func fleetGuard(r *http.Request, args *WebGenericArgs, op string) (FleetStore, error) {
 	ctx := newWebContext(r, args, op)
-	if globalFleetStore == nil {
-		return nil, toJSONError(ctx, errServerNotInitialized)
-	}
 	claims, owner, authErr := webRequestAuthenticate(r)
 	if authErr != nil {
 		return nil, toJSONError(ctx, authErr)
 	}
 	if !callerCanSeeInstanceTotals(ctx, r, claims.AccessKey, claims.Map(), owner) {
 		return nil, toJSONError(ctx, errAccessDenied)
+	}
+	// Check permission before revealing store state
+	if globalFleetStore == nil {
+		return nil, toJSONError(ctx, errFleetStoreDisabled)
 	}
 	return globalFleetStore, nil
 }
@@ -193,16 +201,21 @@ func (web *webAPIHandlers) FleetRegions(r *http.Request, args *WebGenericArgs, r
 	return nil
 }
 
-// Daily bandwidth and ops ring series.
-func (web *webAPIHandlers) FleetMetrics(r *http.Request, args *WebGenericArgs, reply *FleetMetricsRep) error {
-	store, err := fleetGuard(r, args, "WebFleetMetrics")
+// Bandwidth and operation series
+func (web *webAPIHandlers) FleetMetrics(r *http.Request, args *FleetMetricsArgs, reply *FleetMetricsRep) error {
+	store, err := fleetGuard(r, &WebGenericArgs{}, "WebFleetMetrics")
 	if err != nil {
 		return err
 	}
-	bw, ops := store.Series()
+	windowHours := fleetMetricsWindowHours(args.WindowHours)
+	now := time.Now()
+	bw, ops := store.SeriesWindow(now, windowHours)
 	reply.Bandwidth = bw
 	reply.Ops = ops
-	reply.WindowHours = fleetRingSize
+	reply.WindowHours = windowHours
+	if since := store.Since(now); !since.IsZero() {
+		reply.Since = since.Format(time.RFC3339)
+	}
 	reply.UIVersion = Version
 	return nil
 }
@@ -218,7 +231,7 @@ func (web *webAPIHandlers) FleetEnrollToken(r *http.Request, args *WebGenericArg
 		return toJSONError(ctx, errAccessDenied)
 	}
 	if globalFleetStore == nil {
-		return toJSONError(ctx, errServerNotInitialized)
+		return toJSONError(ctx, errFleetStoreDisabled)
 	}
 	store := globalFleetStore
 	tok := store.MintEnrollToken(time.Now())

@@ -1,823 +1,470 @@
-import type { ReactNode } from "react";
+import Link from "next/link";
+import { BucketTable } from "@/components/BucketTable";
+import { Card, cardSparkline, hoverLines, StatCard } from "@/components/Card";
 import { CreateBucketButton } from "@/components/CreateBucketButton";
-import { EnrollNodeButton } from "@/components/EnrollNodeButton";
-import { REGION_COUNTRY } from "@/lib/regionmap";
-import { type BucketEntry, humanCount, humanSize, listBuckets, rpc } from "@/lib/rpc";
-import { COUNTRIES, WORLD_VIEWBOX } from "@/lib/worldmap";
+import { AreaChart, Gauge, Legend, RegionRow } from "@/components/charts";
+import { PageHeader } from "@/components/PageHeader";
+import { RangeMenu } from "@/components/RangeMenu";
+import { RangeTabs } from "@/components/RangeTabs";
+import {
+  type Capacity,
+  capacityBreakdown,
+  getTimeRange,
+  type Health,
+  health,
+  hourlyAverages,
+  rangeDescription,
+  usageNote,
+} from "@/lib/chart";
+import {
+  capacityHistory,
+  FLEET_DISABLED,
+  fleetMetrics,
+  fleetRegions,
+  nodes,
+  type RegionStat,
+  settle,
+  storage,
+  TRAFFIC_OFF,
+} from "@/lib/fleet";
+import { formatClock, formatDay, humanCount, humanSize, isStale, plural } from "@/lib/format";
+import {
+  bucketAccess,
+  listBuckets,
+  publicHost,
+  publicURL,
+  rpcEndpoint,
+  serverInfo,
+} from "@/lib/rpc";
+import { safeDisplayName } from "@/lib/safe-name";
+import { AttentionBanner } from "./AttentionBanner";
 
-interface StorageResult {
-  used: number;
-  total: number;
-  free: number;
-  disksOnline: number;
-  disksOffline: number;
-  objectsCount: number;
-}
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-interface FleetServersRep {
-  servers: { online: boolean }[];
-  total: number;
-}
+// Usage scan time shown on hover
+const STALE_MS = 600_000;
 
-interface RegionStat {
-  region: string;
-  used: number;
-  total: number;
-}
-
-interface FleetRegionsRep {
-  regions: RegionStat[];
-  totalUsed: number;
-}
-
-interface BWBucket {
-  in: number;
-  out: number;
-}
-
-interface OpsBucket {
-  read: number;
-  write: number;
-}
-
-interface FleetMetricsRep {
-  bandwidth: BWBucket[];
-  ops: OpsBucket[];
-  windowHours: number;
-}
-
-// Scaling where empty is nothing, trace is too few samples, data is usable charts
-type PlotMode = "empty" | "trace" | "data";
-
-// Smallest domain a plot may use
-const BYTES_FLOOR = 1 << 20;
-const OPS_FLOOR = 10;
-
-function plotScale(series: number[][], floor: number): { mode: PlotMode; domain: number } {
-  const all = series.flat();
-  const max = Math.max(...all, 0);
-  if (max <= 0) return { mode: "empty", domain: floor };
-  const samples = all.filter((v) => v > 0).length;
-  if (samples < 3) return { mode: "trace", domain: floor };
-  return { mode: "data", domain: Math.max(max, floor) };
-}
-
-// Sequential magnitude
-function shareOpacity(pct: number): number {
-  return pct >= 75 ? 0.9 : pct >= 50 ? 0.65 : pct >= 25 ? 0.4 : 0.2;
-}
-
-// Capacity meter
-function Gauge({
-  usedPct,
-  size = 116,
-  stroke = 12,
+export default async function Overview({
+  searchParams,
 }: {
-  usedPct: number; // 0..1
-  size?: number;
-  stroke?: number;
+  searchParams: Promise<{ range?: string | string[] }>;
 }) {
-  const used = Math.max(0, Math.min(1, usedPct));
-  const r = (size - stroke) / 2;
-  const c = size / 2;
-  const circ = 2 * Math.PI * r;
-  const sweep = 270;
-  const arcLen = circ * (sweep / 360);
-  const usedLen = arcLen * used;
-  // Rotate so the 90deg gap sits centered
-  const rot = `rotate(135 ${c} ${c})`;
-  return (
-    <svg
-      role="img"
-      aria-label={`${Math.round(used * 100)}% disk used`}
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="shrink-0"
-    >
-      <circle
-        cx={c}
-        cy={c}
-        r={r}
-        fill="none"
-        stroke="var(--color-zinc-800)"
-        strokeWidth={stroke}
-        strokeDasharray={`${arcLen} ${circ}`}
-        strokeLinecap="round"
-        transform={rot}
-      />
-      {/* Round cap on a zero-length arc */}
-      {usedLen > 0 && (
-        <circle
-          cx={c}
-          cy={c}
-          r={r}
-          fill="none"
-          stroke="var(--color-amber-500)"
-          strokeWidth={stroke}
-          strokeDasharray={`${usedLen} ${circ}`}
-          strokeLinecap="round"
-          transform={rot}
-        />
-      )}
-      <text
-        x={c}
-        y={c + 2}
-        textAnchor="middle"
-        className="fill-stone-100 font-bold font-display text-2xl leading-none"
-      >
-        {Math.round(used * 100)}%
-      </text>
-      <text x={c} y={c + 18} textAnchor="middle" className="fill-stone-500 text-[9px] capitalize">
-        disk
-      </text>
-    </svg>
+  const range = getTimeRange((await searchParams).range);
+  const info = await serverInfo();
+  // Backend mode has no scanner or capacity history
+  const historyCall = info?.usage ? capacityHistory(range.hours) : null;
+  const fleet = info?.canSeeFleet ?? false;
+  const metrics = info?.metrics ?? false;
+  const bucketRes = await settle(listBuckets());
+  const buckets = bucketRes.ok ? bucketRes.value : [];
+  const newest = [...buckets].sort(
+    (a, b) => Date.parse(b.creationDate) - Date.parse(a.creationDate),
   );
-}
+  const top = newest.slice(0, 5);
 
-function SegmentBar({ online, offline }: { online: number; offline: number }) {
-  const total = online + offline;
-  const onPct = total === 0 ? 0 : (online / total) * 100;
-  const offPct = total === 0 ? 0 : (offline / total) * 100;
-  const onColor = offline === 0 ? "bg-stone-700" : "bg-green-500";
+  const [storageRes, nodeRes, regionRes, metricRes, access] = await Promise.all([
+    storage(),
+    fleet ? nodes() : null,
+    fleet && metrics ? fleetRegions() : null,
+    fleet && metrics ? fleetMetrics(range.hours) : null,
+    bucketAccess(top.map((b) => b.name)),
+  ]);
+  const errors = [bucketRes, storageRes, nodeRes, regionRes, metricRes].flatMap((r) =>
+    r && !r.ok && r.code !== FLEET_DISABLED ? [r.error] : [],
+  );
+  // Store stopped since ServerInfo, treat as unavailable
+  const traffic = metrics && !(metricRes && !metricRes.ok && metricRes.code === FLEET_DISABLED);
+  const s = storageRes.ok ? storageRes.value : null;
+  const historyRes = await historyCall;
+  const hist = historyRes?.ok ? historyRes.value : null;
+  const liveUsage = s?.usageAsOf ? s : null;
+  const cap = s ? capacityBreakdown(s) : null;
+  const h = nodeRes?.ok ? health(nodeRes.value) : null;
+  const regions: RegionStat[] =
+    regionRes?.ok && regionRes.value.length > 0
+      ? [...regionRes.value].sort((a, b) => b.used - a.used)
+      : s
+        ? [{ region: s.region, used: s.used, total: s.total, free: s.free }]
+        : [];
+  const m = metricRes?.ok ? metricRes.value : null;
+  const hours = m?.windowHours || range.hours;
+  const bw = m?.bandwidth ?? [];
+  const note = usageNote(info?.usage, s?.usageAsOf);
+  const scanned = s && !note ? s : null;
+  // Server renders hover text in UTC
+  const asOf =
+    scanned && isStale(scanned.usageAsOf, Date.now(), STALE_MS)
+      ? ` | as of ${formatClock(scanned.usageAsOf, "UTC")} UTC`
+      : "";
+  const rows = top.map((b) => ({
+    name: b.name,
+    created: formatDay(b.creationDate),
+    createdAt: b.creationDate,
+    access: access[b.name] ?? null,
+    size: b.size,
+    objects: b.objects,
+  }));
+
   return (
-    <div className="flex h-3 w-full overflow-hidden rounded-sm bg-surface-overlay">
-      <div className={onColor} style={{ width: `${onPct}%` }} />
-      <div className="bg-red-400" style={{ width: `${offPct}%` }} />
+    <div className="space-y-4">
+      <PageHeader
+        title="Storage overview"
+        subtitle={
+          <>
+            Usage, traffic and cluster health for <span className="font-mono">{publicHost()}</span>.
+          </>
+        }
+        actions={
+          <>
+            {((fleet && traffic) || info?.usage) && (
+              <RangeMenu
+                selected={range}
+                path="/"
+                className="bg-surface font-body hover:bg-surface-overlay inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-4 text-[15px] leading-[calc(20/14)] font-semibold whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+              />
+            )}
+            <CreateBucketButton className="font-body inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-[15px] leading-[calc(20/14)] font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11" />
+          </>
+        }
+      />
+
+      <AttentionBanner />
+      {errors.length > 0 && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm text-red-400">
+            <span className="icon-[tabler--alert-circle] text-base" />
+            {errors[0]}
+          </p>
+          <p className="mt-1 pl-6 font-mono text-xs text-stone-400">
+            Console is reading {rpcEndpoint()}.
+          </p>
+        </div>
+      )}
+
+      <div
+        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${fleet ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}
+      >
+        <StatCard
+          icon="icon-[tabler--database]"
+          label="Storage used"
+          value={scanned ? humanSize(scanned.used) : "N/A"}
+          title={hoverLines(
+            "Bytes stored by objects, before parity",
+            note ?? (scanned && `across ${plural(regions.length, "region")}${asOf}`),
+          )}
+          aside={cardSparkline(
+            hist,
+            "Storage used history",
+            hist?.used ?? null,
+            liveUsage ? liveUsage.used : null,
+            "bytes",
+          )}
+        />
+        <StatCard
+          icon="icon-[tabler--box]"
+          label="Total objects"
+          aside={cardSparkline(
+            hist,
+            "Total objects history",
+            hist?.objects ?? null,
+            liveUsage ? liveUsage.objectsCount : null,
+            "count",
+          )}
+          value={scanned ? humanCount(scanned.objectsCount) : "N/A"}
+          title={hoverLines(
+            "Objects counted by the last usage scan",
+            note ??
+              (scanned &&
+                scanned.objectsCount > 0 &&
+                `avg ${humanSize(scanned.used / scanned.objectsCount)}${asOf}`),
+          )}
+        />
+        <StatCard
+          icon="icon-[tabler--bucket]"
+          label="Buckets"
+          aside={cardSparkline(
+            hist,
+            "Buckets history",
+            hist?.buckets ?? null,
+            bucketRes.ok ? buckets.length : null,
+            "count",
+          )}
+          value={bucketRes.ok ? humanCount(buckets.length) : "N/A"}
+          title={hoverLines(
+            "Buckets this access key can list",
+            newest[0] && `newest ${safeDisplayName(newest[0].name)}`,
+          )}
+        />
+        {fleet && (
+          <StatCard
+            icon="icon-[tabler--chart-pie]"
+            label="Available space"
+            aside={cardSparkline(
+              hist,
+              "Available space history",
+              hist?.free ?? null,
+              s && s.total > 0 ? s.free : null,
+              "bytes",
+            )}
+            value={cap ? humanSize(cap.free) : "N/A"}
+            title={hoverLines(
+              "Raw free space on every drive, before parity",
+              cap && `of ${humanSize(cap.total)} raw`,
+            )}
+          />
+        )}
+      </div>
+
+      {(fleet || cap) && (
+        <div className="grid gap-4 xl:grid-cols-3">
+          {fleet && (
+            <Card
+              title="Bandwidth"
+              icon="icon-[tabler--activity]"
+              className={cap ? "xl:col-span-2" : "xl:col-span-3"}
+              bodyClassName="flex flex-col"
+              action={traffic && <RangeTabs value={range.value} label="Bandwidth time range" />}
+            >
+              {traffic ? (
+                <>
+                  <Legend
+                    items={[
+                      {
+                        color: "bg-cyan-500",
+                        label: "Uploads",
+                        value: m ? humanSize(sum(bw.map((b) => b.in))) : "N/A",
+                      },
+                      {
+                        color: "bg-amber-500",
+                        label: "Downloads",
+                        value: m ? humanSize(sum(bw.map((b) => b.out))) : "N/A",
+                      },
+                    ]}
+                  />
+                  <AreaChart
+                    kind="bytes"
+                    hours={hours}
+                    since={m?.since}
+                    label={`Uploads and downloads over the last ${rangeDescription(hours)}`}
+                    empty={
+                      m
+                        ? `No transfers in the last ${rangeDescription(hours)}.`
+                        : "Bandwidth unavailable."
+                    }
+                    series={[
+                      {
+                        name: "Uploads",
+                        color: "var(--color-cyan-500)",
+                        data: hourlyAverages(
+                          bw.map((b) => b.in),
+                          hours,
+                        ),
+                      },
+                      {
+                        name: "Downloads",
+                        color: "var(--color-amber-500)",
+                        data: hourlyAverages(
+                          bw.map((b) => b.out),
+                          hours,
+                        ),
+                      },
+                    ]}
+                  />
+                </>
+              ) : (
+                <p className="py-10 text-center text-sm text-stone-400">{TRAFFIC_OFF}</p>
+              )}
+            </Card>
+          )}
+          {cap && <CapacityCard cap={cap} />}
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card
+          title="Buckets"
+          icon="icon-[tabler--bucket]"
+          flush
+          className={fleet ? "xl:col-span-2" : "xl:col-span-3"}
+          action={
+            buckets.length > 0 ? (
+              <Link
+                href="/buckets"
+                className="bg-surface font-body hover:bg-surface-overlay inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+              >
+                View all
+                <span className="icon-[tabler--arrow-right]" />
+              </Link>
+            ) : undefined
+          }
+        >
+          {!bucketRes.ok ? (
+            <p className="px-5 pb-5 text-sm text-stone-400">Bucket list unavailable.</p>
+          ) : buckets.length > 0 ? (
+            <BucketTable rows={rows} usage={info?.usage ?? false} />
+          ) : (
+            <FirstRun url={publicURL()} />
+          )}
+        </Card>
+        {fleet && <ClusterCard h={h} regions={regions} />}
+      </div>
     </div>
   );
 }
 
-// Status row of server or drives
-function ClusterRow({
-  name,
+function CapacityCard({ cap }: { cap: Capacity }) {
+  return (
+    <Card title="Storage capacity" icon="icon-[tabler--gauge]">
+      <div className="flex justify-center">
+        <Gauge capacity={cap} />
+      </div>
+      <dl className="mx-2 mt-3 grid grid-cols-[1fr_max-content_2fr_max-content_1fr] gap-y-3 border-t border-stone-800/70 pt-3">
+        <div
+          className="col-start-2 w-fit justify-self-start text-left"
+          title="Raw space in use on every drive, including object data and other files"
+        >
+          <dt className="text-sm font-bold text-stone-400">Used</dt>
+          <dd className="font-display mt-1 text-center text-2xl font-bold">
+            {humanSize(cap.total - cap.free)}
+          </dd>
+        </div>
+        <div
+          className="col-start-4 w-fit justify-self-end text-left"
+          title="Raw free space on every drive, before parity"
+        >
+          <dt className="text-sm font-bold text-stone-400">Free</dt>
+          <dd className="font-display mt-1 text-center text-2xl font-bold">
+            {humanSize(cap.free)}
+          </dd>
+        </div>
+        <div
+          className="col-span-5 grid grid-cols-subgrid items-center border-t border-stone-800/70 pt-3"
+          title="Total raw space on every drive, before parity"
+        >
+          <dt className="col-start-2 text-xs font-bold text-stone-400">Raw Capacity</dt>
+          <dd className="col-start-4 justify-self-end font-mono text-sm text-white">
+            {humanSize(cap.total)}
+          </dd>
+        </div>
+      </dl>
+    </Card>
+  );
+}
+
+function ClusterCard({ h, regions }: { h: Health | null; regions: RegionStat[] }) {
+  return (
+    <Card title="Cluster health" icon="icon-[tabler--server-2]">
+      {h ? (
+        <div className="divide-y divide-stone-800/70 overflow-hidden rounded-lg border border-stone-800/70">
+          <HealthRow
+            icon="icon-[tabler--server-2]"
+            label="Nodes"
+            online={h.nodesOnline}
+            total={h.nodesTotal}
+          />
+          <HealthRow
+            icon="icon-[tabler--database]"
+            label="Drives"
+            online={h.drivesOnline}
+            total={h.drivesTotal}
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-stone-400">Node status unavailable.</p>
+      )}
+      {regions.length > 0 && (
+        <div className="mt-4 border-t border-stone-800/70 pt-4">
+          <p className="font-body mb-3 text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase">
+            {regions.length === 1 ? "Region" : "Regions"}
+          </p>
+          <div className="space-y-3">
+            {regions.slice(0, 3).map((r) => (
+              <RegionRow
+                key={r.region}
+                region={r.region}
+                used={r.used}
+                total={r.total}
+                free={r.total > 0 ? r.free : undefined}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="mt-4 border-t border-stone-800/70 pt-4">
+        <Link
+          href="/cluster"
+          className="inline-flex items-center gap-2 text-sm text-stone-400 hover:text-stone-200"
+        >
+          View cluster
+          <span className="icon-[tabler--arrow-right]" />
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
+function HealthRow({
+  icon,
+  label,
   online,
-  offline,
   total,
 }: {
-  name: string;
+  icon: string;
+  label: string;
   online: number;
-  offline: number;
   total: number;
 }) {
+  const offline = total - online;
+  const ok = total > 0 && online === total;
   return (
-    <div className="flex flex-1 flex-col justify-center gap-2">
-      <div className="flex items-center justify-between">
-        <span className="font-display font-semibold text-sm">{name}</span>
-        <span className="whitespace-nowrap font-bold font-display text-lg leading-none">
-          {online}
-          <span className="text-stone-600">/{total}</span>
-        </span>
-      </div>
-      <SegmentBar online={online} offline={offline} />
-      <div className="flex items-center gap-3 font-mono text-[10px]">
-        <span className="flex items-center gap-1.5 capitalize">
-          <span className="icon-[tabler--power] text-[13px] text-stone-500" />
-          <span className="text-stone-400">{online}</span>{" "}
-          <span className="text-stone-600">online</span>
-        </span>
-        <span className="flex items-center gap-1.5 capitalize">
-          <span
-            className={`icon-[tabler--power] text-[13px] ${
-              offline > 0 ? "text-red-400" : "text-stone-600"
-            }`}
-          />
-          <span className={offline > 0 ? "text-red-400" : "text-stone-400"}>{offline}</span>{" "}
-          <span className="text-stone-600">offline</span>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// Center baseline reads grow up, writes grow down
-function DivergingBars({
-  up,
-  down,
-  upColor,
-  downColor,
-  domain,
-  mode,
-  width = 600,
-  height = 140,
-}: {
-  up: number[];
-  down: number[];
-  upColor: string;
-  downColor: string;
-  domain: number;
-  mode: PlotMode;
-  width?: number;
-  height?: number;
-}) {
-  const n = up.length;
-  const barGap = 2;
-  const barWidth = (width - barGap * (n - 1)) / n;
-  const mid = height / 2;
-  const half = mid - 4;
-
-  // One path per direction rather than a node per bucket
-  const barPath = (values: number[], dir: "up" | "down") =>
-    values
-      .map((v, i) => {
-        const h = (v / domain) * half;
-        if (h <= 0) return "";
-        const x = i * (barWidth + barGap);
-        return `M${x} ${dir === "up" ? mid - h : mid}h${barWidth}v${h}h${-barWidth}Z`;
-      })
-      .join("");
-
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-full w-full"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
+    <Link
+      href="/cluster"
+      className="hover:bg-surface/60 grid grid-cols-[44px_1fr_auto_auto] items-center transition-colors"
     >
-      <line x1={0} y1={mid} x2={width} y2={mid} stroke="var(--color-zinc-800)" strokeWidth={1} />
-      {mode !== "empty" &&
-        [
-          { d: barPath(up, "up"), color: upColor },
-          { d: barPath(down, "down"), color: downColor },
-        ].map((b) => (b.d ? <path key={b.color} d={b.d} fill={b.color} /> : null))}
-    </svg>
-  );
-}
-
-function LineChart({
-  series,
-  domain,
-  mode,
-  width = 600,
-  height = 140,
-}: {
-  series: { data: number[]; color: string }[];
-  domain: number;
-  mode: PlotMode;
-  width?: number;
-  height?: number;
-}) {
-  const n = Math.max(...series.map((s) => s.data.length), 2);
-  const stepX = (width - 2) / (n - 1);
-  const base = height - 10;
-  const x = (i: number) => 1 + i * stepX;
-  const y = (v: number) => base - (v / domain) * (height - 20);
-
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-full w-full"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-    >
-      <line
-        x1={0}
-        y1={base}
-        x2={width}
-        y2={base}
-        stroke="var(--color-zinc-800)"
-        strokeWidth={1}
-        strokeDasharray="2 4"
-      />
-      {mode !== "empty" &&
-        series.map((s, si) => {
-          if (s.data.every((v) => v <= 0)) return null;
-          if (mode === "trace") {
-            const ticks = s.data
-              .map((v, i) => (v > 0 ? `M${x(i) + si * 2} ${base}V${base - 6}` : ""))
-              .join("");
-            return <path key={s.color} d={ticks} fill="none" stroke={s.color} strokeWidth={1.5} />;
-          }
-          return (
-            <polyline
-              key={s.color}
-              points={s.data.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}
-              fill="none"
-              stroke={s.color}
-              strokeWidth={1.5}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          );
-        })}
-    </svg>
-  );
-}
-
-function WorldHeatmap({
-  usedByCountry,
-  regionsUsed,
-}: {
-  usedByCountry: Map<string, number>;
-  regionsUsed: number;
-}) {
-  return (
-    <svg aria-hidden="true" width="100%" viewBox={WORLD_VIEWBOX} className="h-auto w-full">
-      {COUNTRIES.map(([id, d]) => {
-        const bytes = usedByCountry.get(id);
-        const share = bytes !== undefined && regionsUsed > 0 ? (bytes / regionsUsed) * 100 : 0;
-        return (
-          <path
-            key={id}
-            d={d}
-            fill={bytes === undefined ? "var(--color-surface-overlay)" : "var(--color-amber-500)"}
-            fillOpacity={bytes === undefined ? 1 : shareOpacity(share)}
-            stroke="var(--color-abyss)"
-            strokeWidth={0.5}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-export default async function DashboardHome() {
-  // Determine if it can see before any fleet calls
-  let canSeeFleet = false;
-  try {
-    const sv = await rpc<{ canSeeFleet: boolean }>("ServerInfo");
-    canSeeFleet = sv.canSeeFleet ?? false;
-  } catch {}
-
-  // Gate the first-run layout on the live bucket list
-  let buckets: BucketEntry[] = [];
-  try {
-    buckets = await listBuckets();
-  } catch {}
-  const firstRun = buckets.length === 0;
-  const endpoint = process.env.OBSTOR_ENDPOINT || "http://localhost:9000";
-
-  let used = 0;
-  let total = 0;
-  let free = 0;
-  let objectsCount = 0;
-  let driveOnline = 0;
-  let driveOffline = 0;
-
-  let nodesOnline = 0;
-  let nodesTotal = 0;
-  let regions: RegionStat[] = [];
-  let regionsUsed = 0;
-  let windowHours = 24;
-  let downloadSeries: number[] = Array(24).fill(0);
-  let uploadSeries: number[] = Array(24).fill(0);
-  let readSeries: number[] = Array(24).fill(0);
-  let writeSeries: number[] = Array(24).fill(0);
-  let fetchError = "";
-
-  const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Request failed");
-
-  if (canSeeFleet) {
-    const [siR, slR, frR, fmR] = await Promise.allSettled([
-      rpc<StorageResult>("FleetStorageInfo"),
-      rpc<FleetServersRep>("FleetServers", { offset: 0, limit: 256 }),
-      rpc<FleetRegionsRep>("FleetRegions"),
-      rpc<FleetMetricsRep>("FleetMetrics"),
-    ]);
-
-    if (siR.status === "fulfilled") {
-      const s = siR.value;
-      used = s.used;
-      total = s.total;
-      free = s.free;
-      objectsCount = s.objectsCount;
-      driveOnline = s.disksOnline;
-      driveOffline = s.disksOffline;
-    } else {
-      fetchError ||= errMsg(siR.reason);
-    }
-
-    if (slR.status === "fulfilled") {
-      nodesTotal = slR.value.total;
-      nodesOnline = slR.value.servers.filter((n) => n.online).length;
-    } else {
-      fetchError ||= errMsg(slR.reason);
-    }
-
-    if (frR.status === "fulfilled") {
-      regions = frR.value.regions;
-      regionsUsed = frR.value.totalUsed;
-    } else {
-      fetchError ||= errMsg(frR.reason);
-    }
-
-    if (fmR.status === "fulfilled") {
-      const fm = fmR.value;
-      windowHours = fm.windowHours || 24;
-      downloadSeries = fm.bandwidth.map((b) => b.out);
-      uploadSeries = fm.bandwidth.map((b) => b.in);
-      readSeries = fm.ops.map((o) => o.read);
-      writeSeries = fm.ops.map((o) => o.write);
-    } else {
-      fetchError ||= errMsg(fmR.reason);
-    }
-  } else {
-    try {
-      const s = await rpc<StorageResult>("StorageInfo");
-      used = s.used;
-      total = s.total;
-      free = s.free;
-      objectsCount = s.objectsCount;
-      driveOnline = s.disksOnline;
-      driveOffline = s.disksOffline;
-    } catch (err) {
-      fetchError = errMsg(err);
-    }
-  }
-
-  const nodesOffline = Math.max(0, nodesTotal - nodesOnline);
-  const driveTotal = driveOnline + driveOffline;
-
-  // One filled country is not a map
-  const usedByCountry = new Map<string, number>();
-  for (const r of regions) {
-    const country = REGION_COUNTRY[r.region];
-    if (country) usedByCountry.set(country, (usedByCountry.get(country) ?? 0) + r.used);
-  }
-  const showMap = usedByCountry.size >= 2;
-
-  // The gauge meters disk fill
-  const diskPct = total > 0 ? (total - free) / total : 0;
-  const bw = plotScale([downloadSeries, uploadSeries], BYTES_FLOOR);
-  const ops = plotScale([readSeries, writeSeries], OPS_FLOOR);
-  const downloadTotal = downloadSeries.reduce((a, b) => a + b, 0);
-  const uploadTotal = uploadSeries.reduce((a, b) => a + b, 0);
-  const readTotal = readSeries.reduce((a, b) => a + b, 0);
-  const writeTotal = writeSeries.reduce((a, b) => a + b, 0);
-
-  const usageCard = (
-    <Card title="Usage" icon="icon-[tabler--database]">
-      <div className="flex h-full flex-col justify-between gap-4">
-        {total > 0 ? (
-          <div className="flex items-start gap-4">
-            <Gauge usedPct={diskPct} />
-            <div className="min-w-0 space-y-2.5">
-              <div>
-                <p className="whitespace-nowrap font-bold font-display text-2xl leading-none">
-                  {humanSize(used)}
-                </p>
-                <p className="mt-1 font-mono text-[10px] text-stone-600 capitalize">stored</p>
-              </div>
-              <div>
-                <p className="whitespace-nowrap font-bold font-display text-2xl leading-none">
-                  {humanSize(free)}
-                </p>
-                <p className="mt-1 font-mono text-[10px] text-stone-600 capitalize">free</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="py-6 font-body text-stone-600 text-xs">
-            Capacity appears once at least one drive reports in.
-          </p>
-        )}
-        <div className="grid grid-cols-3 gap-2 border-amber-200/10 border-t pt-3">
-          <Stat value={humanCount(objectsCount)} label="objects" />
-          <Stat value={humanCount(buckets.length)} label="buckets" />
-          <Stat value={total > 0 ? humanSize(total) : "N/A"} label="capacity" />
-        </div>
-      </div>
-    </Card>
-  );
-
-  const clusterCard = (
-    <Card
-      title="Cluster"
-      icon="icon-[tabler--stack-2]"
-      rightLabel={firstRun ? undefined : <EnrollNodeButton />}
-    >
-      <div className="flex h-full flex-col divide-y divide-amber-200/10">
-        <ClusterRow name="Nodes" online={nodesOnline} offline={nodesOffline} total={nodesTotal} />
-        <ClusterRow name="Drives" online={driveOnline} offline={driveOffline} total={driveTotal} />
-      </div>
-    </Card>
-  );
-
-  const bandwidthCard = (
-    <Card title="Bandwidth" icon="icon-[tabler--chart-line]">
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-3 font-mono text-[10px] text-stone-600">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-5 rounded-[2px] bg-amber-500" /> Downloads{" "}
-            <NumUnit text={humanSize(downloadTotal)} />
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-5 rounded-[2px] bg-cyan-500" /> Uploads{" "}
-            <NumUnit text={humanSize(uploadTotal)} />
-          </span>
-        </div>
-        <div className="relative mt-2 max-h-[200px] min-h-0 flex-1">
-          {bw.mode !== "empty" && (
-            <span className="absolute top-0 left-0 font-mono text-[9px] text-stone-600">
-              {humanSize(bw.domain)}/h
-            </span>
-          )}
-          {bw.mode === "empty" && (
-            <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-stone-400">
-              <span className="bg-abyss px-2">No transfers in the last {windowHours} hours.</span>
-            </span>
-          )}
-          <LineChart
-            series={[
-              { data: downloadSeries, color: "var(--color-amber-500)" },
-              { data: uploadSeries, color: "var(--color-cyan-500)" },
-            ]}
-            domain={bw.domain}
-            mode={bw.mode}
-          />
-        </div>
-        <AxisHours hours={windowHours} />
-      </div>
-    </Card>
-  );
-
-  const operationsCard = (
-    <Card title="Operations" icon="icon-[tabler--activity]">
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-3 font-mono text-[10px] text-stone-600">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-5 rounded-[2px] bg-amber-400" /> Reads{" "}
-            <span className="text-stone-400">{readTotal.toLocaleString()}</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-5 rounded-[2px] bg-cyan-500" /> Writes{" "}
-            <span className="text-stone-400">{writeTotal.toLocaleString()}</span>
-          </span>
-        </div>
-        <div className="relative mt-2 max-h-[180px] min-h-0 flex-1">
-          {ops.mode !== "empty" && (
-            <span className="absolute top-0 left-0 font-mono text-[9px] text-stone-600">
-              {ops.domain} ops/h
-            </span>
-          )}
-          {ops.mode === "empty" && (
-            <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] text-stone-400">
-              <span className="bg-abyss px-2">No requests in the last {windowHours} hours.</span>
-            </span>
-          )}
-          <DivergingBars
-            up={readSeries}
-            down={writeSeries}
-            upColor="var(--color-amber-400)"
-            downColor="var(--color-cyan-500)"
-            domain={ops.domain}
-            mode={ops.mode}
-          />
-        </div>
-        <AxisHours hours={windowHours} />
-      </div>
-    </Card>
-  );
-
-  const regionsCard = (
-    <Card
-      title="Regions"
-      icon="icon-[tabler--world]"
-      rightLabel={
-        <>
-          {regionsUsed > 0 ? (
-            <>
-              <NumUnit text={humanSize(regionsUsed)} /> used <Sep />{" "}
-            </>
-          ) : null}
-          <span className="text-stone-400">{regions.length}</span>{" "}
-          {regions.length === 1 ? "region" : "regions"}
-        </>
-      }
-      className={showMap ? "@container" : "@container self-start"}
-    >
-      {regions.length === 0 ? (
-        <p className="py-6 font-body text-stone-600 text-xs">No regions reporting.</p>
-      ) : (
-        <div className={`grid gap-5 ${showMap ? "@xl:grid-cols-[1fr_200px]" : ""}`}>
-          {showMap && (
-            <div className="flex flex-col gap-3">
-              <div className="overflow-hidden rounded-lg border border-amber-200/5 bg-void/40 p-3">
-                <WorldHeatmap usedByCountry={usedByCountry} regionsUsed={regionsUsed} />
-              </div>
-              {regionsUsed > 0 && (
-                <div className="flex items-center gap-2 font-mono text-[10px] text-stone-600">
-                  <span className="uppercase tracking-wider">Share of stored bytes</span>
-                  <span className="text-stone-400">0%</span>
-                  <div className="flex h-1.5 flex-1 overflow-hidden rounded-full">
-                    {[0.2, 0.4, 0.65, 0.9].map((o) => (
-                      <div key={o} className="h-full flex-1 bg-amber-500" style={{ opacity: o }} />
-                    ))}
-                  </div>
-                  <span className="text-stone-400">100%</span>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="max-h-[280px] space-y-2.5 overflow-y-auto pr-1">
-            {[...regions]
-              .sort((a, b) => b.used - a.used)
-              .map((r) => {
-                const share = regionsUsed > 0 ? (r.used / regionsUsed) * 100 : 0;
-                return (
-                  <div key={r.region}>
-                    <div className="mb-1 flex items-center justify-between font-mono text-[11px]">
-                      <span className="text-stone-400">{r.region}</span>
-                      <span className="text-stone-600">{humanSize(r.used)}</span>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay">
-                      <div
-                        className="h-full rounded-full bg-amber-500"
-                        style={{
-                          width: share > 0 ? `${Math.max(share, 2)}%` : "0%",
-                          opacity: shareOpacity(share),
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-
-  const getStartedCard = (
-    <Card title="Get started" icon="icon-[tabler--list-numbers]">
-      <div className="divide-y divide-amber-200/10">
-        <Step
-          n={1}
-          title="Create a bucket."
-          body="Objects are stored in buckets. Nothing else on this page moves until one exists."
-          action={<CreateBucketButton />}
+      <span className="flex h-11 items-center justify-center border-r border-stone-800/70">
+        <span className={`${icon} text-lg text-stone-400`} />
+      </span>
+      <span className="px-4 text-sm text-stone-200">{label}</span>
+      <span
+        className={`inline-flex items-center gap-2 font-mono text-sm ${ok ? "text-green-400" : "text-amber-400"}`}
+      >
+        <span
+          className={`h-4 w-4 ${ok ? "icon-[tabler--circle-check] bg-green-500" : "icon-[tabler--circle-minus] bg-amber-500"}`}
         />
-        {canSeeFleet && (
-          <Step
-            n={2}
-            title="Add a node."
-            body="Enroll another machine to spread data across nodes."
-            action={<EnrollNodeButton />}
-          />
-        )}
-      </div>
-    </Card>
+        {offline > 0 ? `${offline} offline` : `${online} online`}
+      </span>
+      <span className="icon-[tabler--chevron-right] mx-3 text-stone-500" />
+    </Link>
   );
+}
 
-  const connectCard = (
-    <Card title="Connect" icon="icon-[tabler--plug-connected]">
-      <div className="flex h-full flex-col gap-3">
-        <div>
-          <p className="font-mono text-[10px] text-stone-600 capitalize">s3 endpoint</p>
-          <p className="mt-1 select-all break-all font-mono text-sm text-stone-300">{endpoint}</p>
-        </div>
-        <div>
-          <p className="font-mono text-[10px] text-stone-600 capitalize">example request</p>
-          <p className="mt-1 select-all break-all rounded-lg border border-amber-200/5 bg-void/40 px-3 py-2 font-mono text-[11px] text-stone-300">
-            aws --endpoint-url {endpoint} s3 ls
-          </p>
-        </div>
-        <p className="mt-auto font-body text-stone-600 text-xs">
-          Sign requests with an access key and secret. Create one on a bucket's Access tab.
+function FirstRun({ url }: { url: string }) {
+  return (
+    <div className="space-y-5 px-5 pb-5">
+      <div className="flex flex-wrap items-center gap-4">
+        <p className="text-sm text-stone-300">
+          No buckets yet. Objects live in buckets, so start with one.
         </p>
+        <CreateBucketButton />
       </div>
-    </Card>
-  );
-
-  const errorBanner = fetchError ? (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
-      <p className="flex items-center gap-2 font-body text-red-400 text-sm">
-        <span className="icon-[tabler--alert-circle] text-sm" />
-        {fetchError}
-      </p>
-      <p className="mt-1 pl-6 font-mono text-[11px] text-stone-500">
-        Console is reading {endpoint}.
+      <div>
+        <p className="font-body text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase">
+          S3 endpoint
+        </p>
+        <p className="mt-1.5 font-mono text-sm break-all select-all">{url}</p>
+      </div>
+      <div>
+        <p className="font-body text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase">
+          Example request
+        </p>
+        <pre className="bg-abyss mt-1.5 overflow-x-auto rounded-lg border border-stone-800/70 px-3 py-2 font-mono text-[13px] text-stone-300 select-all">
+          aws --endpoint-url {url} s3 ls
+        </pre>
+      </div>
+      <p className="text-xs text-stone-400">
+        Sign requests with an access key and secret. Create one in a bucket's settings, on the
+        Access tab.
       </p>
     </div>
-  ) : null;
-
-  if (!canSeeFleet) {
-    return (
-      <div className="flex flex-col gap-4">
-        {errorBanner}
-        {firstRun ? (
-          <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-[4fr_5fr]">
-              {usageCard}
-              {connectCard}
-            </div>
-            {getStartedCard}
-          </>
-        ) : (
-          <div className="max-w-sm">{usageCard}</div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      {errorBanner}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[4fr_5fr_9fr]">
-        {usageCard}
-        {clusterCard}
-        {bandwidthCard}
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[4fr_3fr]">
-        {firstRun ? getStartedCard : regionsCard}
-        {firstRun ? connectCard : operationsCard}
-      </div>
-    </div>
-  );
-}
-
-function Card({
-  title,
-  icon,
-  rightLabel,
-  className,
-  children,
-}: {
-  title: string;
-  icon?: string;
-  rightLabel?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`flex flex-col rounded-xl border border-amber-200/5 bg-abyss p-5 ${className ?? ""}`}
-    >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-2 font-display font-semibold text-sm">
-          {icon && <span className={`${icon} text-[13px] text-amber-500`} />}
-          {title}
-        </p>
-        {rightLabel && <div className="font-mono text-[11px] text-stone-600">{rightLabel}</div>}
-      </div>
-      <div className="flex-1">{children}</div>
-    </div>
-  );
-}
-
-function Step({
-  n,
-  title,
-  body,
-  action,
-}: {
-  n: number;
-  title: string;
-  body: string;
-  action: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-4">
-      <div className="min-w-0">
-        <p className="font-display font-semibold text-sm">
-          <span className="mr-2 font-mono text-[11px] text-amber-500">{n}</span>
-          {title}
-        </p>
-        <p className="mt-1 font-body text-stone-400 text-xs">{body}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function AxisHours({ hours }: { hours: number }) {
-  const tickCount = 7;
-  const now = new Date();
-  const ticks = Array.from({ length: tickCount }, (_, i) => {
-    const ms = now.getTime() - (1 - i / (tickCount - 1)) * hours * 3_600_000;
-    const label =
-      i === tickCount - 1 ? "now" : `${String(new Date(ms).getHours()).padStart(2, "0")}:00`;
-    return { ms, label };
-  });
-  return (
-    <div className="mt-1 flex justify-between font-mono text-[9px] text-stone-600">
-      {ticks.map((t) => (
-        <span key={t.ms}>{t.label}</span>
-      ))}
-    </div>
-  );
-}
-
-function Sep() {
-  return <span className="text-stone-600">|</span>;
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <p className="whitespace-nowrap font-bold font-display text-lg leading-none">{value}</p>
-      <p className="mt-1 font-mono text-[10px] text-stone-600 capitalize">{label}</p>
-    </div>
-  );
-}
-
-function NumUnit({ text, numClass = "text-stone-400" }: { text: string; numClass?: string }) {
-  const i = text.lastIndexOf(" ");
-  if (i === -1) return <span className={numClass}>{text}</span>;
-  return (
-    <>
-      <span className={numClass}>{text.slice(0, i)}</span>
-      <span className="text-stone-600">{text.slice(i)}</span>
-    </>
   );
 }

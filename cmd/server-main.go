@@ -260,6 +260,12 @@ func newAllSubsystems() {
 
 	// Create new bucket replication subsytem
 	globalBucketTargetSys = NewBucketTargetSys()
+
+	// Create the capacity history store
+	globalCapacityHistory = newCapacityHistory()
+
+	// Create the activity log
+	globalActivityLog = newActivityLog(globalLocalNodeName, activityRingSize, activityQueueSize)
 }
 
 func configRetriableErrors(err error) bool {
@@ -488,8 +494,7 @@ func serverMain(ctx *cli.Context) {
 
 	// Controller node self-elects when --web-address is set
 	if globalCLIContext.FrontendAddrSet {
-		globalFleetStore = newInMemFleetStore(3 * resolveFleetReportInterval())
-		go newFleetCollector(globalFleetStore).run(GlobalContext)
+		globalFleetStore = newInMemFleetStore(3*resolveFleetReportInterval(), trafficHistoryKey(globalLocalNodeName))
 		logger.Info("fleet controller active, self-reporting enabled")
 	}
 
@@ -552,6 +557,9 @@ func serverMain(ctx *cli.Context) {
 		logFatalErrs(err, Endpoint{}, true)
 	}
 
+	// Loads node's saved activity
+	globalActivityLog.Start(GlobalContext, newObject)
+
 	logger.SetDeploymentID(globalDeploymentID)
 
 	// Enable background operations for erasure coding
@@ -576,6 +584,14 @@ func serverMain(ctx *cli.Context) {
 			logger.FatalIf(err, "Server startup canceled upon user request")
 		}
 	}
+
+	if globalFleetStore != nil {
+		go func() {
+			globalFleetStore.LoadHistory(GlobalContext, newObject)
+			newFleetCollector(globalFleetStore).run(GlobalContext)
+		}()
+	}
+	go runHistorySaver(GlobalContext, newObject)
 
 	if globalIsErasure { // to be done after config init
 		initBackgroundReplication(GlobalContext, newObject)

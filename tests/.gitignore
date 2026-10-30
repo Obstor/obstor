@@ -22,3 +22,6 @@ run/core/healthcheck/healthcheck
 .phplint.cache/
 build/versioning/tests
 tools/
+/build/aws-sdk-java-v2/.gradle/
+/build/aws-sdk-java-v2/build/
+/build/aws-sdk-java-v2/app/build/

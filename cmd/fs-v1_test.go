@@ -407,3 +407,30 @@ func TestFSHealObjects(t *testing.T) {
 		t.Fatalf("Heal Object should return NotImplemented error ")
 	}
 }
+
+// Healthy FS drive reports ok and shows online
+func TestFSStorageInfoDriveStateOk(t *testing.T) {
+	obj, disk, err := prepareFS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(disk)
+
+	for name, info := range map[string]func() (StorageInfo, []error){
+		"StorageInfo":      func() (StorageInfo, []error) { return obj.StorageInfo(GlobalContext) },
+		"LocalStorageInfo": func() (StorageInfo, []error) { return obj.LocalStorageInfo(GlobalContext) },
+	} {
+		si, errs := info()
+		for _, e := range errs {
+			if e != nil {
+				t.Fatalf("%s: %v", name, e)
+			}
+		}
+		if len(si.Disks) != 1 {
+			t.Fatalf("%s: expected 1 disk, got %d", name, len(si.Disks))
+		}
+		if si.Disks[0].State != madmin.DriveStateOk {
+			t.Fatalf("%s: expected drive state %q, got %q", name, madmin.DriveStateOk, si.Disks[0].State)
+		}
+	}
+}

@@ -2,7 +2,7 @@ wget
 git
 python3-pip
 ruby-dev
-ruby-bundler
+build-essential
 openjdk-21-jdk
 ant
 dotnet-sdk-8.0

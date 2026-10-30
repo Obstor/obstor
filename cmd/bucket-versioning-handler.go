@@ -18,7 +18,9 @@
 package cmd
 
 import (
+	"context"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 
@@ -35,6 +37,22 @@ const (
 	// Maximum size of bucket versioning configuration payload sent to the PutBucketVersioningHandler.
 	maxBucketVersioningConfigSize = 1 * humanize.MiByte
 )
+
+var (
+	errVersioningLocked     = errors.New("an Object Lock configuration is present on this bucket, so the versioning state cannot be changed")
+	errVersioningReplicated = errors.New("a replication configuration is present on this bucket, so the versioning state cannot be changed")
+)
+
+// Object lock or replication prevents suspending versioning
+func checkVersioningSuspend(ctx context.Context, bucket string) error {
+	if rcfg, _ := globalBucketObjectLockSys.Get(bucket); rcfg.LockEnabled {
+		return errVersioningLocked
+	}
+	if _, err := getReplicationConfig(ctx, bucket); err == nil {
+		return errVersioningReplicated
+	}
+	return nil
+}
 
 // PutBucketVersioningHandler - PUT Bucket Versioning.
 // ----------
@@ -63,21 +81,15 @@ func (api objectAPIHandlers) PutBucketVersioningHandler(w http.ResponseWriter, r
 		return
 	}
 
-	if rcfg, _ := globalBucketObjectLockSys.Get(bucket); rcfg.LockEnabled && v.Suspended() {
-		writeErrorResponse(ctx, w, APIError{
-			Code:           "InvalidBucketState",
-			Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
-			HTTPStatusCode: http.StatusConflict,
-		}, r.URL, guessIsBrowserReq(r))
-		return
-	}
-	if _, err := getReplicationConfig(ctx, bucket); err == nil && v.Suspended() {
-		writeErrorResponse(ctx, w, APIError{
-			Code:           "InvalidBucketState",
-			Description:    "A replication configuration is present on this bucket, so the versioning state cannot be changed.",
-			HTTPStatusCode: http.StatusConflict,
-		}, r.URL, guessIsBrowserReq(r))
-		return
+	if v.Suspended() {
+		if err := checkVersioningSuspend(ctx, bucket); err != nil {
+			writeErrorResponse(ctx, w, APIError{
+				Code:           "InvalidBucketState",
+				Description:    err.Error(),
+				HTTPStatusCode: http.StatusConflict,
+			}, r.URL, guessIsBrowserReq(r))
+			return
+		}
 	}
 
 	configData, err := xml.Marshal(v)

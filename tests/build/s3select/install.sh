@@ -16,5 +16,13 @@
 #  limitations under the License.
 #
 
-OBSTOR_PY_VERSION="7.2.20"
-pip3 install --break-system-packages --no-cache-dir obstor=="${OBSTOR_PY_VERSION}"
+set -euo pipefail
+build_dir="$(cd "$(dirname "$0")" && pwd)"
+source "$build_dir/../sdk-source.sh"
+source_dir="$(mktemp -d)"
+trap 'rm -rf "$source_dir"' EXIT
+checkout_sdk obstor-py "$source_dir/sdk" "${OBSTOR_PY_REF:-$(saved_sdk_ref "$build_dir/../obstor-py")}"
+python3 -m pip install --break-system-packages --no-cache-dir \
+    "$source_dir/sdk"
+python3 -c 'import obstor'
+python3 "$TESTS_RUN_CORE_DIR/s3select/request_models_test.py"

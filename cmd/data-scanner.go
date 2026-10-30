@@ -90,18 +90,68 @@ func (s *safeDuration) Get() time.Duration {
 // There should only ever be one scanner running per cluster.
 func runDataScanner(ctx context.Context, objAPI ObjectLayer) {
 	var err error
+	parent := ctx
+	// Keep scanner lease alive through final shutdown save
+	lease, cancelLease := context.WithCancel(context.WithoutCancel(parent))
+	stopAcquire := context.AfterFunc(parent, cancelLease)
 	// Make sure only 1 scanner is running on the cluster.
 	locker := objAPI.NewNSLock(obstorMetaBucket, "runDataScanner.lock")
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for {
-		ctx, err = locker.GetLock(ctx, dataScannerLeaderLockTimeout)
+		ctx, err = locker.GetLock(lease, dataScannerLeaderLockTimeout)
 		if err != nil {
-			time.Sleep(time.Duration(r.Float64() * float64(scannerCycle.Get())))
+			if lease.Err() != nil {
+				stopAcquire()
+				cancelLease()
+				return
+			}
+			timer := time.NewTimer(time.Duration(r.Float64() * float64(scannerCycle.Get())))
+			select {
+			case <-lease.Done():
+			case <-timer.C:
+			}
+			timer.Stop()
 			continue
 		}
 		break
-		// No unlock for "leader" lock.
 	}
+	if !stopAcquire() || parent.Err() != nil {
+		cancelLease()
+		locker.Unlock()
+		return
+	}
+	lease = ctx
+
+	// The capacity saver uses lease independent of shutdown caller
+	for {
+		if err = globalCapacityHistory.BecomeLeader(lease, objAPI); err == nil {
+			break
+		}
+		logger.LogOnceIf(parent, err, "capacity-history-leader")
+		timer := time.NewTimer(historySaveCheck)
+		select {
+		case <-parent.Done():
+		case <-lease.Done():
+		case <-timer.C:
+		}
+		timer.Stop()
+		if parent.Err() != nil || lease.Err() != nil {
+			globalCapacityHistory.ResignLeader()
+			cancelLease()
+			locker.Unlock()
+			return
+		}
+	}
+	ctx, stopWork := historyLeaseContext(parent, lease)
+	defer stopWork()
+	// A graceful shutdown keeps live lease for final forced save
+	defer func() {
+		if lease.Err() != nil || parent.Err() == nil {
+			globalCapacityHistory.ResignLeader()
+			cancelLease()
+			locker.Unlock()
+		}
+	}()
 
 	// Load current bloom cycle
 	nextBloomCycle := intDataUpdateTracker.current() + 1

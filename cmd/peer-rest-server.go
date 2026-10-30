@@ -358,6 +358,23 @@ func (s *peerRESTServer) ServerInfoHandler(w http.ResponseWriter, r *http.Reques
 	logger.LogIf(ctx, gob.NewEncoder(w).Encode(info))
 }
 
+// ListActivityHandler - returns local events matching filter
+func (s *peerRESTServer) ListActivityHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.IsValid(w, r) {
+		s.writeErrorResponse(w, errors.New("invalid request"))
+		return
+	}
+
+	ctx := newContext(r, w, "ListActivity")
+	var f activityFilter
+	if err := gob.NewDecoder(r.Body).Decode(&f); err != nil {
+		s.writeErrorResponse(w, err)
+		return
+	}
+	f.Limit = min(f.Limit, activityMaxLimit+1)
+	logger.LogIf(ctx, gob.NewEncoder(w).Encode(globalActivityLog.query(f)))
+}
+
 func (s *peerRESTServer) NetInfoHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "NetInfo")
 	if !s.IsValid(w, r) {
@@ -580,13 +597,11 @@ func (s *peerRESTServer) LoadBucketMetadataHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
-	meta, err := loadBucketMetadata(r.Context(), objAPI, bucketName)
+	meta, err := globalBucketMetadataSys.Reload(r.Context(), objAPI, bucketName)
 	if err != nil {
 		s.writeErrorResponse(w, err)
 		return
 	}
-
-	globalBucketMetadataSys.Set(bucketName, meta)
 
 	if meta.notificationConfig != nil {
 		globalNotificationSys.AddRulesMap(bucketName, meta.notificationConfig.ToRulesMap())
@@ -1103,6 +1118,7 @@ func registerPeerRESTHandlers(router *mux.Router) {
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodHealth).HandlerFunc(httpTraceHdrs(server.HealthHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodGetLocks).HandlerFunc(httpTraceHdrs(server.GetLocksHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodServerInfo).HandlerFunc(httpTraceHdrs(server.ServerInfoHandler))
+	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodListActivity).HandlerFunc(httpTraceHdrs(server.ListActivityHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodProcInfo).HandlerFunc(httpTraceHdrs(server.ProcInfoHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodMemInfo).HandlerFunc(httpTraceHdrs(server.MemInfoHandler))
 	subrouter.Methods(http.MethodPost).Path(peerRESTVersionPrefix + peerRESTMethodOsInfo).HandlerFunc(httpTraceHdrs(server.OsInfoHandler))

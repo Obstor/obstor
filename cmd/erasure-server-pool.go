@@ -555,6 +555,13 @@ func (z *erasureServerPools) NSScanner(ctx context.Context, bf *bloomFilter, upd
 // even if one of the sets fail to create buckets, we proceed all the successful
 // operations.
 func (z *erasureServerPools) MakeBucketWithLocation(ctx context.Context, bucket string, opts BucketOptions) error {
+	lock := bucketMetadataLock(z, bucket)
+	ctx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+
 	g := errgroup.WithNErrs(len(z.serverPools))
 
 	// Create buckets in parallel across all sets.
@@ -1462,7 +1469,11 @@ func (z *erasureServerPools) Walk(ctx context.Context, bucket, prefix string, re
 				}
 
 				for _, obj := range loi.Objects {
-					results <- obj
+					select {
+					case results <- obj:
+					case <-ctx.Done():
+						return
+					}
 				}
 
 				if !loi.IsTruncated {
@@ -1487,7 +1498,11 @@ func (z *erasureServerPools) Walk(ctx context.Context, bucket, prefix string, re
 			}
 
 			for _, obj := range loi.Objects {
-				results <- obj
+				select {
+				case results <- obj:
+				case <-ctx.Done():
+					return
+				}
 			}
 
 			if !loi.IsTruncated {

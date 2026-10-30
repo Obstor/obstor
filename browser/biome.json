@@ -23,13 +23,16 @@
   "linter": {
     "enabled": true,
     "rules": {
+      "a11y": {
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": { "inputComponents": ["Checkbox"] }
+        }
+      },
       "nursery": {
-        "useSortedClasses": {
+        "useTailwindSortedClasses": {
           "level": "warn",
-          "fix": "safe",
-          "options": {
-            "functions": ["clsx", "cva", "cn"]
-          }
+          "fix": "safe"
         }
       },
       "complexity": {
@@ -38,7 +41,8 @@
       "performance": {
         "noImgElement": "off"
       },
-      "recommended": true
+      "preset": "recommended"
     }
-  }
+  },
+  "tailwind": { "mergeFunctions": ["clsx", "cn"], "variantFunctions": ["cva"] }
 }

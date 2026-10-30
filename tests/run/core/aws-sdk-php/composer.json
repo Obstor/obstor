@@ -1,6 +1,11 @@
 {
     "require": {
-        "aws/aws-sdk-php": "^3.359",
-        "guzzlehttp/psr7": "^2.4.5"
+        "aws/aws-sdk-php": "^3.398",
+        "guzzlehttp/psr7": "^3.1"
+    },
+    "config": {
+        "platform": {
+            "php": "8.3.0"
+        }
     }
 }

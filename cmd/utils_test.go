@@ -525,6 +525,9 @@ func TestLCP(t *testing.T) {
 }
 
 func TestGetObstorMode(t *testing.T) {
+	defer func(d, e, b bool, n string) {
+		globalIsDistErasure, globalIsErasure, globalIsBackend, globalBackendName = d, e, b, n
+	}(globalIsDistErasure, globalIsErasure, globalIsBackend, globalBackendName)
 	testObstorMode := func(expected string) {
 		if mode := getObstorMode(); mode != expected {
 			t.Fatalf("Expected %s got %s", expected, mode)

@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/obstor/obstor/cmd/logger"
 	"github.com/obstor/obstor/pkg/hash"
@@ -40,6 +41,7 @@ const (
 // storeDataUsageInBackend will store all objects sent on the gui channel until closed.
 func storeDataUsageInBackend(ctx context.Context, objAPI ObjectLayer, dui <-chan madmin.DataUsageInfo) {
 	for dataUsageInfo := range dui {
+		globalCapacityHistory.Sample(ctx, objAPI, dataUsageInfo, time.Now())
 		dataUsageJSON, err := json.Marshal(dataUsageInfo)
 		if err != nil {
 			logger.LogIf(ctx, err)

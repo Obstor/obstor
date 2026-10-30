@@ -41,6 +41,8 @@ fi
 
 xargs --arg-file="${TESTS_ROOT_DIR}/install-packages.list" apt --quiet -y install
 
+npm install --global "pnpm@${PNPM_VERSION}"
+
 # set python 3.12 as default (Ubuntu 24.04)
 update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 

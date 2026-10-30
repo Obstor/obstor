@@ -20,8 +20,8 @@ test_run_dir="$TESTS_RUN_CORE_DIR/aws-sdk-java-v2"
 
 cd "$(dirname "$(realpath "$0")")"
 
-gradle wrapper
-./gradlew clean build
+gradle wrapper --gradle-version "$GRADLE_VERSION"
+./gradlew --refresh-dependencies clean build
 
 cp app/build/libs/FunctionalTests.jar "$test_run_dir/"
 

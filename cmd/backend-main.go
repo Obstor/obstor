@@ -309,6 +309,9 @@ func StartBackend(ctx *cli.Context, gw Backend) {
 	globalObjectAPI = newObject
 	globalObjLayerMutex.Unlock()
 
+	// Activity log is in memory
+	globalActivityLog.Start(GlobalContext, newObject)
+
 	if backendName == NASBackend {
 		buckets, err := newObject.ListBuckets(GlobalContext)
 		if err != nil {

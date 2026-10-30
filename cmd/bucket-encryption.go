@@ -59,3 +59,6 @@ func validateBucketSSEConfig(r io.Reader) (*bucketsse.BucketSSEConfig, error) {
 
 	return nil, errors.New("unsupported bucket encryption configuration")
 }
+
+// SSE-S3 encryption accepted by validateBucketSSEConfig
+var bucketSSES3Config = []byte(`<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>`)

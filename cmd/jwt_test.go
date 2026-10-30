@@ -135,7 +135,7 @@ func TestWebRequestAuthenticate(t *testing.T) {
 					"Authorization": []string{"invalid-token"},
 				},
 			},
-			expectedErr: errAuthentication,
+			expectedErr: errWebTokenInvalid,
 		},
 	}
 

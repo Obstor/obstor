@@ -1,0 +1,15 @@
+// Stage compiled FunctionalTest classes and their complete runtime classpath
+gradle.projectsEvaluated {
+    def functional = gradle.rootProject.project(':functional')
+    def output = gradle.rootProject.findProperty('obstorTestsOutput')
+    if (!output) {
+        throw new GradleException('Set -PobstorTestsOutput to the functional-test output directory')
+    }
+    // The output contains run.sh and README.md supplied by harness
+    functional.tasks.register('stageObstorFunctionalTests', Copy) {
+        dependsOn functional.tasks.named('classes')
+        from functional.sourceSets.main.output
+        from functional.configurations.runtimeClasspath
+        into output
+    }
+}

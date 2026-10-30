@@ -23,8 +23,9 @@ export WGET="wget --quiet --no-check-certificate"
 export WGET="wget --quiet --no-check-certificate"
 
 ## Software versions
-export GO_VERSION="1.26.4"
-export GRADLE_VERSION="9.2.0"
+export GO_VERSION="1.27.1"
+export GRADLE_VERSION="9.8.0"
+export PNPM_VERSION="12.11.2"
 export GRADLE_INSTALL_PATH="/opt/gradle"
 export GO_INSTALL_PATH="/usr/local"
 

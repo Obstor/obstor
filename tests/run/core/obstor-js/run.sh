@@ -27,7 +27,7 @@ error_log_file="$2"
 
 # Prepare test runner project
 cp -R /tests/test-run/obstor-js/ ./obstor-js
-npm install --quiet &>/dev/null
+pnpm install --frozen-lockfile
 
 # Run tests
 node ./node_modules/mocha/bin/mocha.js "./obstor-js/tests/functional/functional-tests.js" -R obstorreporter >>"$output_log_file" 2>"$error_log_file"

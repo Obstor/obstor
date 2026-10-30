@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/obstor/obstor/cmd/logger"
 )
@@ -68,6 +69,10 @@ func handleSignals() {
 		}
 
 		if objAPI := newObjectLayerFn(); objAPI != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			saveHistories(ctx, objAPI, time.Now(), true)
+			logger.LogIf(ctx, globalActivityLog.Flush(ctx))
+			cancel()
 			oerr = objAPI.Shutdown(context.Background())
 			logger.LogIf(context.Background(), oerr)
 		}

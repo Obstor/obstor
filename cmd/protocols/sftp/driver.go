@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -33,6 +34,9 @@ import (
 
 // 5GB file max for uploads
 const sftpMaxFileSize = 5 << 30
+
+// Records SFTP mutations
+var recordActivity = obstor.RecordActivity
 
 // sftp.FileReader, sftp.FileWriter, sftp.FileCmder, sftp.FileLister.
 type sftpDriver struct {
@@ -135,6 +139,9 @@ func (d *sftpDriver) Filewrite(r *xsftp.Request) (io.WriterAt, error) {
 		streamingWriterAt: &streamingWriterAt{w: pw},
 		pw:                pw,
 		done:              done,
+		accessKey:         d.accessKey,
+		bucket:            bucket,
+		object:            object,
 	}, nil
 }
 
@@ -172,25 +179,7 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 			}
 			return nil
 		}
-		reader, err := objAPI.GetObjectNInfo(ctx, srcBucket, srcObject, nil, nil, obstor.ReadLock, obstor.ObjectOptions{})
-		if err != nil {
-			return sftpErrorMap(err)
-		}
-		srcSize := reader.ObjInfo.Size
-		hashReader, err := hash.NewReader(reader, srcSize, "", "", srcSize)
-		if err != nil {
-			_ = reader.Close()
-			return err
-		}
-		_, perr := objAPI.PutObject(ctx, dstBucket, dstObject, obstor.NewPutObjReader(hashReader), obstor.ObjectOptions{})
-		_ = reader.Close()
-		if perr != nil {
-			return sftpErrorMap(perr)
-		}
-		if _, err := objAPI.DeleteObject(ctx, srcBucket, srcObject, obstor.ObjectOptions{}); err != nil {
-			return sftpErrorMap(err)
-		}
-		return nil
+		return d.record("RenameObject", dstBucket, dstObject, renameObject(ctx, objAPI, srcBucket, srcObject, dstBucket, dstObject))
 
 	case "Rmdir":
 		bucket, prefix := parseSFTPPath(r.Filepath)
@@ -202,10 +191,7 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 			if err := obstor.CheckSFTPAccess(d.accessKey, bucket, "", obstor.SFTPActionDeleteBucket); err != nil {
 				return os.ErrPermission
 			}
-			if err := objAPI.DeleteBucket(ctx, bucket, false); err != nil {
-				return sftpErrorMap(err)
-			}
-			return nil
+			return d.record("DeleteBucket", bucket, "", sftpErrorMap(objAPI.DeleteBucket(ctx, bucket, false)))
 		}
 		if err := obstor.CheckSFTPAccess(d.accessKey, bucket, prefix, obstor.SFTPActionDeleteObject); err != nil {
 			return os.ErrPermission
@@ -215,7 +201,7 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 			prefix += "/"
 		}
 		_, _ = objAPI.DeleteObject(ctx, bucket, prefix, obstor.ObjectOptions{})
-		return nil
+		return d.record("DeleteObject", bucket, prefix, nil)
 
 	case "Mkdir":
 		bucket, prefix := parseSFTPPath(r.Filepath)
@@ -227,7 +213,7 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 			if err := obstor.CheckSFTPAccess(d.accessKey, bucket, "", obstor.SFTPActionCreateBucket); err != nil {
 				return os.ErrPermission
 			}
-			return sftpErrorMap(objAPI.MakeBucketWithLocation(ctx, bucket, obstor.BucketOptions{}))
+			return d.record("PutBucket", bucket, "", sftpErrorMap(objAPI.MakeBucketWithLocation(ctx, bucket, obstor.BucketOptions{})))
 		}
 		if err := obstor.CheckSFTPAccess(d.accessKey, bucket, prefix, obstor.SFTPActionPutObject); err != nil {
 			return os.ErrPermission
@@ -238,10 +224,10 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 		}
 		hashReader, err := hash.NewReader(bytes.NewReader(nil), 0, "", "", 0)
 		if err != nil {
-			return err
+			return d.record("PutObject", bucket, prefix, err)
 		}
 		_, err = objAPI.PutObject(ctx, bucket, prefix, obstor.NewPutObjReader(hashReader), obstor.ObjectOptions{})
-		return sftpErrorMap(err)
+		return d.record("PutObject", bucket, prefix, sftpErrorMap(err))
 
 	case "Remove":
 		bucket, object := parseSFTPPath(r.Filepath)
@@ -252,7 +238,7 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 			return os.ErrPermission
 		}
 		_, err := objAPI.DeleteObject(ctx, bucket, object, obstor.ObjectOptions{})
-		return sftpErrorMap(err)
+		return d.record("DeleteObject", bucket, object, sftpErrorMap(err))
 
 	case "Symlink":
 		return fmt.Errorf("symlinks are not supported")
@@ -262,6 +248,39 @@ func (d *sftpDriver) Filecmd(r *xsftp.Request) error {
 	}
 
 	return fmt.Errorf("unsupported command: %s", r.Method)
+}
+
+// Record authorized SFTP mutation
+func (d *sftpDriver) record(api, bucket, object string, err error) error {
+	status := http.StatusOK
+	if err != nil {
+		status = http.StatusInternalServerError
+	}
+	recordActivity("sftp", d.accessKey, api, bucket, object, status)
+	return err
+}
+
+// Copy source then delete it
+func renameObject(ctx context.Context, objAPI obstor.ObjectLayer, srcBucket, srcObject, dstBucket, dstObject string) error {
+	reader, err := objAPI.GetObjectNInfo(ctx, srcBucket, srcObject, nil, nil, obstor.ReadLock, obstor.ObjectOptions{})
+	if err != nil {
+		return sftpErrorMap(err)
+	}
+	srcSize := reader.ObjInfo.Size
+	hashReader, err := hash.NewReader(reader, srcSize, "", "", srcSize)
+	if err != nil {
+		_ = reader.Close()
+		return err
+	}
+	_, perr := objAPI.PutObject(ctx, dstBucket, dstObject, obstor.NewPutObjReader(hashReader), obstor.ObjectOptions{})
+	_ = reader.Close()
+	if perr != nil {
+		return sftpErrorMap(perr)
+	}
+	if _, err := objAPI.DeleteObject(ctx, srcBucket, srcObject, obstor.ObjectOptions{}); err != nil {
+		return sftpErrorMap(err)
+	}
+	return nil
 }
 
 // Filelist implements sftp.FileLister.
@@ -503,11 +522,22 @@ func (s *streamingWriterAt) flushParkedLocked() error {
 
 type sftpFileWriter struct {
 	*streamingWriterAt
-	pw   *io.PipeWriter
-	done chan error
+	pw        *io.PipeWriter
+	done      chan error
+	accessKey string
+	bucket    string
+	object    string
 }
 
-func (w *sftpFileWriter) Close() error {
+func (w *sftpFileWriter) Close() (err error) {
+	defer func() {
+		status := http.StatusOK
+		if err != nil {
+			status = http.StatusInternalServerError
+		}
+		recordActivity("sftp", w.accessKey, "PutObject", w.bucket, w.object, status)
+	}()
+
 	w.mu.Lock()
 	leftover := w.parked
 	streamErr := w.err

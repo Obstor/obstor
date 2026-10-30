@@ -19,7 +19,7 @@
 import io
 from datetime import datetime
 
-from obstor.select import (FILE_HEADER_INFO_NONE, JSON_TYPE_DOCUMENT,
+from select_models import (FILE_HEADER_INFO_NONE, JSON_TYPE_DOCUMENT,
                           QUOTE_FIELDS_ASNEEDED, CSVInputSerialization,
                           CSVOutputSerialization, JSONInputSerialization,
                           JSONOutputSerialization, SelectRequest)
@@ -48,40 +48,36 @@ def test_sql_expressions_custom_input_output(client, input_bytes, sql_input,
         for idx, (test_name, select_expression, expected_output) in enumerate(tests):
             if select_expression == '':
                 continue
-            try:
-                log_output.args['total_tests'] += 1
-                sreq = SelectRequest(
-                    select_expression,
-                    sql_input,
-                    sql_output,
-                    request_progress=False
-                )
+            log_output.args['total_tests'] += 1
+            sreq = SelectRequest(
+                select_expression,
+                sql_input,
+                sql_output,
+                request_progress=False
+            )
 
-                data = client.select_object_content(
-                    bucket_name=bucket_name,
-                    object_name=object_name,
-                    request=sreq
-                )
+            data = client.select_object_content(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                request=sreq
+            )
 
-                # Get the records
-                records = io.BytesIO()
-                for d in data.stream(10*1024):
-                    records.write(d)
-                got_output = records.getvalue()
+            # Get the records
+            records = io.BytesIO()
+            for d in data.stream(10*1024):
+                records.write(d)
+            got_output = records.getvalue()
 
-                if got_output != expected_output:
-                    if type(expected_output) == datetime:
-                        # Attempt to parse the date which will throw an exception for any issue
-                        datetime.strptime(got_output.decode(
-                            "utf-8").strip(), '%Y-%m-%dT%H:%M:%S.%f%z')
-                    else:
-                        raise ValueError('Test {}: data mismatch. Expected : {}. Received: {}.'.format(
-                            idx+1, expected_output, got_output))
+            if got_output != expected_output:
+                if type(expected_output) == datetime:
+                    # Attempt to parse the date which will throw an exception for any issue
+                    datetime.strptime(got_output.decode(
+                        "utf-8").strip(), '%Y-%m-%dT%H:%M:%S.%f%z')
+                else:
+                    raise ValueError('Test {}: data mismatch. Expected : {}. Received: {}.'.format(
+                        idx+1, expected_output, got_output))
 
-                log_output.args['total_success'] += 1
-            except Exception as err:
-                continue  # TODO, raise instead
-                # raise Exception(err)
+            log_output.args['total_success'] += 1
     finally:
         client.remove_object(bucket_name=bucket_name, object_name=object_name)
         client.remove_bucket(bucket_name=bucket_name)

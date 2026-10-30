@@ -29,7 +29,7 @@ import (
 	"os"
 	"time"
 
-	jwtgo "github.com/golang-jwt/jwt/v4"
+	jwtgo "github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -137,8 +137,8 @@ func testPrometheusEndpointV2(endpoint string, metricsPath string) {
 		failureLog(function, nil, startTime, "", "URL Parsing for Healthcheck Prometheus handler failed", err)
 	}
 
-	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, jwtgo.StandardClaims{
-		ExpiresAt: time.Now().UTC().Add(defaultPrometheusJWTExpiry).Unix(),
+	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, jwtgo.RegisteredClaims{
+		ExpiresAt: jwtgo.NewNumericDate(time.Now().UTC().Add(defaultPrometheusJWTExpiry)),
 		Subject:   os.Getenv("ACCESS_KEY"),
 		Issuer:    "prometheus",
 	})

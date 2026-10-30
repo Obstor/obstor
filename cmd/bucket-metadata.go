@@ -49,9 +49,10 @@ const (
 	legacyBucketObjectLockEnabledConfigFile = "object-lock-enabled.json"
 	legacyBucketObjectLockEnabledConfig     = `{"x-amz-bucket-object-lock-enabled":true}`
 
-	bucketMetadataFile    = ".metadata.bin"
-	bucketMetadataFormat  = 1
-	bucketMetadataVersion = 1
+	bucketProtocolConfigFile = "protocol.json"
+	bucketMetadataFile       = ".metadata.bin"
+	bucketMetadataFormat     = 1
+	bucketMetadataVersion    = 1
 )
 
 var (
@@ -77,6 +78,7 @@ type BucketMetadata struct {
 	VersioningConfigXML         []byte
 	EncryptionConfigXML         []byte
 	TaggingConfigXML            []byte
+	ProtocolConfigJSON          []byte
 	QuotaConfigJSON             []byte
 	ReplicationConfigXML        []byte
 	BucketTargetsConfigJSON     []byte
@@ -145,8 +147,24 @@ func (b *BucketMetadata) Load(ctx context.Context, api ObjectLayer, name string)
 	return err
 }
 
+// Lock metadata changes across nodes
+func bucketMetadataLock(api ObjectLayer, bucket string) RWLocker {
+	return api.NewNSLock(obstorMetaBucket, path.Join(bucketConfigPrefix, bucket, bucketMetadataFile+".lock"))
+}
+
 // loadBucketMetadata loads and migrates to bucket metadata.
 func loadBucketMetadata(ctx context.Context, objectAPI ObjectLayer, bucket string) (BucketMetadata, error) {
+	lock := bucketMetadataLock(objectAPI, bucket)
+	lockCtx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return newBucketMetadata(bucket), err
+	}
+	defer lock.Unlock()
+	return loadBucketMetadataLocked(lockCtx, objectAPI, bucket)
+}
+
+// Caller holds metadata lock on save
+func loadBucketMetadataLocked(ctx context.Context, objectAPI ObjectLayer, bucket string) (BucketMetadata, error) {
 	b := newBucketMetadata(bucket)
 	err := b.Load(ctx, objectAPI, b.Name)
 	if err != nil && !errors.Is(err, errConfigNotFound) {
@@ -156,6 +174,15 @@ func loadBucketMetadata(ctx context.Context, objectAPI ObjectLayer, bucket strin
 	// Old bucket without bucket metadata. Hence we migrate existing settings.
 	if err := b.convertLegacyConfigs(ctx, objectAPI); err != nil {
 		return b, err
+	}
+	migrated, err := b.migrateBucketProtocolTags()
+	if err != nil {
+		return b, err
+	}
+	if migrated {
+		if err := b.Save(ctx, objectAPI); err != nil {
+			return b, err
+		}
 	}
 	// Migrate unencrypted remote targets
 	return b, b.migrateTargetConfig(ctx, objectAPI)
@@ -206,6 +233,10 @@ func (b *BucketMetadata) parseAllConfigs(ctx context.Context, objectAPI ObjectLa
 		b.taggingConfig = nil
 	}
 
+	if _, err := b.protocolSettings(); err != nil {
+		return err
+	}
+
 	if bytes.Equal(b.ObjectLockConfigXML, enabledBucketObjectLockConfig) {
 		b.VersioningConfigXML = enabledBucketVersioningConfig
 	}
@@ -231,6 +262,8 @@ func (b *BucketMetadata) parseAllConfigs(ctx context.Context, objectAPI ObjectLa
 		if err != nil {
 			return err
 		}
+	} else {
+		b.quotaConfig = &madmin.BucketQuota{}
 	}
 
 	if len(b.ReplicationConfigXML) != 0 {

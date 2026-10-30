@@ -1,4 +1,4 @@
-// Bucket scope and policies are determined here
+// Bucket scope and policies
 import type { IAMUser, NamedPolicy } from "./actions";
 
 export const BUILT_IN_POLICIES: ReadonlySet<string> = new Set([
@@ -93,7 +93,7 @@ function indexPolicy(p: NamedPolicy, liveBuckets: string[]): Omit<IndexedPolicy,
     if (pat === "*") continue;
     const matched = liveBuckets.filter((b) => globMatch(pat, b));
     if (matched.length > 0) buckets.push(...matched);
-    // A literal token naming no live bucket is an orphan
+    // Token naming no live bucket is orphan
     else if (!pat.includes("*") && !pat.includes("?")) missingBuckets.push(pat);
   }
 
@@ -174,4 +174,15 @@ export function policyExclusiveTo(p: IndexedPolicy, bucket: string): boolean {
     p.buckets.length === 1 &&
     p.buckets[0] === bucket
   );
+}
+
+// Access key for new user, blank generates one
+export function newUserError(accessKey: string, existing: string[]): string | null {
+  const key = accessKey.trim();
+  if (key === "") return null;
+  const length = [...key].length;
+  if (length < 3 || length > 20) return "Access keys are 3 to 20 characters.";
+  if (/\s/.test(key)) return "Access keys cannot contain spaces.";
+  if (existing.includes(key)) return "A user with that access key already exists.";
+  return null;
 }

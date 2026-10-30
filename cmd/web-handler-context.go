@@ -246,7 +246,7 @@ func newWebContext(r *http.Request, args ToKeyValuer, api string) context.Contex
 func (args *GetObjectLocationsArgs) ToKeyValue() KeyValueMap {
 	km := KeyValueMap{}
 	km.SetBucket(args.BucketName)
-	km.SetPrefix(args.Prefix)
+	km.SetObjects(args.Objects)
 	return km
 }
 
@@ -333,6 +333,53 @@ func (args *GetBucketTogglesArgs) ToKeyValue() KeyValueMap {
 
 // ToKeyValue implementation for SetBucketTogglesArgs
 func (args *SetBucketTogglesArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for GetBucketConfigArgs
+func (args *GetBucketConfigArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for SetBucketVersioningArgs
+func (args *SetBucketVersioningArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for SetBucketQuotaArgs
+func (args *SetBucketQuotaArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for SetBucketEncryptionArgs
+func (args *SetBucketEncryptionArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for SetBucketTagsArgs
+func (args *SetBucketTagsArgs) ToKeyValue() KeyValueMap {
+	km := KeyValueMap{}
+	km.SetBucket(args.BucketName)
+	return km
+}
+
+// ToKeyValue implementation for CapacityHistoryArgs
+func (args *CapacityHistoryArgs) ToKeyValue() KeyValueMap {
+	return KeyValueMap{}
+}
+
+// ToKeyValue implementation for ListActivityArgs
+func (args *ListActivityArgs) ToKeyValue() KeyValueMap {
 	km := KeyValueMap{}
 	km.SetBucket(args.BucketName)
 	return km

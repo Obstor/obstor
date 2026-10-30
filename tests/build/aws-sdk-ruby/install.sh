@@ -16,4 +16,7 @@
 #  limitations under the License.
 #
 
-gem install --no-document aws-sdk-resources aws-sdk multipart_body
+set -euo pipefail
+cd "$TESTS_RUN_CORE_DIR/aws-sdk-ruby"
+BUNDLE_FROZEN=true bundle install
+bundle exec ruby -e "require 'aws-sdk-s3'; require 'multipart_body'"

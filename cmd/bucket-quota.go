@@ -63,12 +63,7 @@ func parseBucketQuota(bucket string, data []byte) (quotaCfg *madmin.BucketQuota,
 	return
 }
 
-func (sys *BucketQuotaSys) check(ctx context.Context, bucket string, size int64) error {
-	objAPI := newObjectLayerFn()
-	if objAPI == nil {
-		return errServerNotInitialized
-	}
-
+func (sys *BucketQuotaSys) Usage(objAPI ObjectLayer) (madmin.DataUsageInfo, error) {
 	sys.bucketStorageCache.Once.Do(func() {
 		sys.bucketStorageCache.TTL = 1 * time.Second
 		sys.bucketStorageCache.Update = func() (interface{}, error) {
@@ -77,6 +72,18 @@ func (sys *BucketQuotaSys) check(ctx context.Context, bucket string, size int64)
 			return loadDataUsageFromBackend(ctx, objAPI)
 		}
 	})
+	v, err := sys.bucketStorageCache.Get()
+	if err != nil {
+		return madmin.DataUsageInfo{}, err
+	}
+	return v.(madmin.DataUsageInfo), nil
+}
+
+func (sys *BucketQuotaSys) check(ctx context.Context, bucket string, size int64) error {
+	objAPI := newObjectLayerFn()
+	if objAPI == nil {
+		return errServerNotInitialized
+	}
 
 	q, err := sys.Get(bucket)
 	if err != nil {
@@ -84,12 +91,10 @@ func (sys *BucketQuotaSys) check(ctx context.Context, bucket string, size int64)
 	}
 
 	if q != nil && q.Type == madmin.HardQuota && q.Quota > 0 {
-		v, err := sys.bucketStorageCache.Get()
+		dui, err := sys.Usage(objAPI)
 		if err != nil {
 			return err
 		}
-
-		dui := v.(madmin.DataUsageInfo)
 
 		bui, ok := dui.BucketsUsage[bucket]
 		if !ok {

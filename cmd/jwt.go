@@ -47,6 +47,7 @@ var (
 	errChangeCredNotAllowed = errors.New("changing access key and secret key not allowed")
 	errAuthentication       = errors.New("authentication failed, check your access credentials")
 	errNoAuthToken          = errors.New("jwt token missing")
+	errWebTokenInvalid      = errors.New("session token invalid or expired, sign in again")
 	errIncorrectCreds       = errors.New("current access key or secret key is incorrect")
 	errPresignedNotAllowed  = errors.New("unable to generate shareable URL due to lack of read permissions")
 )
@@ -142,18 +143,18 @@ func webTokenAuthenticate(token string) (*xjwt.MapClaims, bool, error) {
 
 // Check if the request is authenticated.
 // Returns nil if the request is authenticated. errNoAuthToken if token missing.
-// Returns errAuthentication for all other errors.
+// Returns errWebTokenInvalid for all other errors.
 func webRequestAuthenticate(req *http.Request) (*xjwt.MapClaims, bool, error) {
 	token, err := jwtreq.AuthorizationHeaderExtractor.ExtractToken(req)
 	if err != nil {
 		if err == jwtreq.ErrNoTokenInRequest {
 			return nil, false, errNoAuthToken
 		}
-		return nil, false, err
+		return nil, false, errWebTokenInvalid
 	}
 	claims := xjwt.NewMapClaims()
 	if err := xjwt.ParseWithClaims(token, claims, webTokenCallback); err != nil {
-		return claims, false, errAuthentication
+		return claims, false, errWebTokenInvalid
 	}
 	owner := claims.AccessKey == globalActiveCred.AccessKey
 	return claims, owner, nil

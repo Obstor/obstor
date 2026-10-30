@@ -81,44 +81,7 @@ func (sys *BucketMetadataSys) Update(bucket string, configFile string, configDat
 	}
 
 	if globalIsBackend {
-		// This code is needed only for backend implementations.
 		switch configFile {
-		case bucketSSEConfig:
-			if globalBackendName == NASBackend {
-				meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
-				if err != nil {
-					return err
-				}
-				meta.EncryptionConfigXML = configData
-				return meta.Save(GlobalContext, objAPI)
-			}
-		case bucketLifecycleConfig:
-			if globalBackendName == NASBackend {
-				meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
-				if err != nil {
-					return err
-				}
-				meta.LifecycleConfigXML = configData
-				return meta.Save(GlobalContext, objAPI)
-			}
-		case bucketTaggingConfig:
-			if globalBackendName == NASBackend {
-				meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
-				if err != nil {
-					return err
-				}
-				meta.TaggingConfigXML = configData
-				return meta.Save(GlobalContext, objAPI)
-			}
-		case bucketNotificationConfig:
-			if globalBackendName == NASBackend {
-				meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
-				if err != nil {
-					return err
-				}
-				meta.NotificationConfigXML = configData
-				return meta.Save(GlobalContext, objAPI)
-			}
 		case bucketPolicyConfig:
 			if configData == nil {
 				return objAPI.DeleteBucketPolicy(GlobalContext, bucket)
@@ -128,15 +91,32 @@ func (sys *BucketMetadataSys) Update(bucket string, configFile string, configDat
 				return err
 			}
 			return objAPI.SetBucketPolicy(GlobalContext, bucket, config)
+		case bucketSSEConfig, bucketLifecycleConfig, bucketTaggingConfig, bucketNotificationConfig:
+			if globalBackendName != NASBackend {
+				return NotImplemented{}
+			}
+		default:
+			return NotImplemented{}
 		}
-		return NotImplemented{}
 	}
 
 	if bucket == obstorMetaBucket {
 		return errInvalidArgument
 	}
 
-	meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
+	lock := bucketMetadataLock(objAPI, bucket)
+	ctx, err := lock.GetLock(GlobalContext, globalOperationTimeout)
+	if err != nil {
+		return err
+	}
+	// Release lock before peers reload with same lock
+	locked := true
+	defer func() {
+		if locked {
+			lock.Unlock()
+		}
+	}()
+	meta, err := loadBucketMetadataLocked(ctx, objAPI, bucket)
 	if err != nil {
 		return err
 	}
@@ -152,6 +132,8 @@ func (sys *BucketMetadataSys) Update(bucket string, configFile string, configDat
 		meta.EncryptionConfigXML = configData
 	case bucketTaggingConfig:
 		meta.TaggingConfigXML = configData
+	case bucketProtocolConfigFile:
+		meta.ProtocolConfigJSON = configData
 	case bucketQuotaConfigFile:
 		meta.QuotaConfigJSON = configData
 	case objectLockConfig:
@@ -181,12 +163,16 @@ func (sys *BucketMetadataSys) Update(bucket string, configFile string, configDat
 		return fmt.Errorf("unknown bucket %s metadata update requested %s", bucket, configFile)
 	}
 
-	if err := meta.Save(GlobalContext, objAPI); err != nil {
+	if err := meta.Save(ctx, objAPI); err != nil {
 		return err
 	}
 
 	sys.Set(bucket, meta)
-	globalNotificationSys.LoadBucketMetadata(GlobalContext, bucket)
+	lock.Unlock()
+	locked = false
+	if !globalIsBackend {
+		globalNotificationSys.LoadBucketMetadata(GlobalContext, bucket)
+	}
 
 	return nil
 }
@@ -414,13 +400,22 @@ func (sys *BucketMetadataSys) GetConfig(bucket string) (BucketMetadata, error) {
 	if ok {
 		return meta, nil
 	}
-	meta, err := loadBucketMetadata(GlobalContext, objAPI, bucket)
+	return sys.Reload(GlobalContext, objAPI, bucket)
+}
+
+// Delayed reads cant replace newer cache
+func (sys *BucketMetadataSys) Reload(ctx context.Context, objAPI ObjectLayer, bucket string) (BucketMetadata, error) {
+	lock := bucketMetadataLock(objAPI, bucket)
+	ctx, err := lock.GetLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return newBucketMetadata(bucket), err
+	}
+	defer lock.Unlock()
+	meta, err := loadBucketMetadataLocked(ctx, objAPI, bucket)
 	if err != nil {
 		return meta, err
 	}
-	sys.Lock()
-	sys.metadataMap[bucket] = meta
-	sys.Unlock()
+	sys.Set(bucket, meta)
 	return meta, nil
 }
 
@@ -451,13 +446,10 @@ func (sys *BucketMetadataSys) concurrentLoad(ctx context.Context, buckets []Buck
 				// Ensure heal opts for bucket metadata be deep healed all the time.
 				ScanMode: madmin.HealDeepScan,
 			})
-			meta, err := loadBucketMetadata(ctx, objAPI, buckets[index].Name)
+			_, err := sys.Reload(ctx, objAPI, buckets[index].Name)
 			if err != nil {
 				return err
 			}
-			sys.Lock()
-			sys.metadataMap[buckets[index].Name] = meta
-			sys.Unlock()
 			return nil
 		}, index)
 	}

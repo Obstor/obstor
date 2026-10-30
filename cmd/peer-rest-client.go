@@ -112,6 +112,22 @@ func (client *peerRESTClient) ServerInfo() (info madmin.ServerProperties, err er
 	return info, err
 }
 
+// ListActivity - fetches peer events matching f
+func (client *peerRESTClient) ListActivity(ctx context.Context, f activityFilter) (activityPage, error) {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(f); err != nil {
+		return activityPage{}, err
+	}
+	respBody, err := client.callWithContext(ctx, peerRESTMethodListActivity, nil, &buf, int64(buf.Len()))
+	if err != nil {
+		return activityPage{}, err
+	}
+	defer xhttp.DrainBody(respBody)
+	var page activityPage
+	err = gob.NewDecoder(respBody).Decode(&page)
+	return page, err
+}
+
 type networkOverloadedErr struct{}
 
 var networkOverloaded networkOverloadedErr

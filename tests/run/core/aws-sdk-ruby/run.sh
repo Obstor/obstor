@@ -24,7 +24,7 @@ fi
 
 output_log_file="$1"
 error_log_file="$2"
+cd "$(dirname "$0")" || exit 1
 
 # run tests
-chmod a+x aws-stub-tests.rb
-ruby aws-stub-tests.rb 1>>"$output_log_file" 2>"$error_log_file"
+bundle exec ruby aws-stub-tests.rb 1>>"$output_log_file" 2>"$error_log_file"

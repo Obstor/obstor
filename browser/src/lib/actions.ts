@@ -1,11 +1,33 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { buildAccessIndex, policyExclusiveTo, policyGrants } from "./access-index";
-import { listBuckets, rpc } from "./rpc";
-import { RESERVED_BUCKET_NAMES } from "./safe-name";
+import { buildAccessIndex, newUserError, policyExclusiveTo, policyGrants } from "./access-index";
+import type { ActivityCursor, ActivityEvent, ActivityGroup, ActivityPage } from "./activity";
+import type { AttentionItem } from "./attention";
+import {
+  type BucketConfig,
+  type BucketFeatures,
+  type ConfigChange,
+  configChanges,
+  iamSettingsError,
+  parseBucketConfig,
+  policyWrites,
+  type RawBucketConfig,
+  type Readable,
+  sectionConfig,
+} from "./bucket-config";
+import { classifyLoginResponse, cookieSecure, type LoginResult, loginErrorMessage } from "./login";
+import {
+  listBuckets,
+  publicHost,
+  RPCError,
+  rethrowSessionError,
+  rpc,
+  rpcEndpoint,
+  rpcSettled,
+} from "./rpc";
 
 // Types
 export interface NamedPolicy {
@@ -27,19 +49,8 @@ export interface IAMUser {
   pendingSecretKey?: string;
 }
 
-export interface BucketSettings {
+export interface AccessDraft extends BucketConfig {
   name: string;
-  publicAccess: "private" | "public-read" | "public-read-write";
-  versioning: boolean;
-  objectLocking: boolean;
-  quotaEnabled: boolean;
-  quotaType: "hard" | "fifo";
-  quotaSize: string;
-  quotaUnit: "GB" | "TB" | "PB";
-  encryptionEnabled: boolean;
-  encryptionType: "SSE-S3" | "SSE-KMS";
-  kmsKeyId: string;
-  tags: { key: string; value: string }[];
   policies: PolicyRow[];
   users: IAMUser[];
   // Staged removals
@@ -49,49 +60,52 @@ export interface BucketSettings {
   catchAllPolicies: string[];
   attachablePolicies: PolicyRow[];
   attachableUsers: IAMUser[];
-  sftpEnabled: boolean;
-  s3Enabled: boolean;
-  placementStrategy: "smart" | "custom";
-  regions: string[];
 }
 
+// IAM editors need both policy and user listings
+export interface BucketAccessLoad {
+  draft: AccessDraft;
+  readable: Readable;
+  iam: boolean;
+}
+
+const msg = (e: unknown, fallback: string) => {
+  rethrowSessionError(e);
+  return e instanceof Error ? e.message : fallback;
+};
+
 // Auth
-export async function loginAction(formData: FormData) {
-  const accessKey = formData.get("accessKey") as string;
-  const secretKey = formData.get("secretKey") as string;
+export async function loginAction(formData: FormData): Promise<{ error: string }> {
+  const accessKey = String(formData.get("accessKey") ?? "").trim();
+  const secretKey = String(formData.get("secretKey") ?? "");
 
-  try {
-    const result = await rpcUnauthed<{ token: string }>("Login", {
-      username: accessKey,
-      password: secretKey,
-    });
+  const res = await rpcUnauthed("Login", { username: accessKey, password: secretKey });
+  if (!res.ok) return { error: loginErrorMessage(res.failure, rpcEndpoint()) };
 
-    const cookieStore = await cookies();
-    cookieStore.set("obstor_token", result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-  } catch {
-    return { error: "Invalid access key or secret key" };
-  }
-
+  (await cookies()).set("obstor_token", res.token, {
+    httpOnly: true,
+    secure: cookieSecure((await headers()).get("origin"), process.env.OBSTOR_CONSOLE_SECURE_COOKIE),
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24,
+  });
   redirect("/");
 }
 
-async function rpcUnauthed<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-  const endpoint = process.env.OBSTOR_ENDPOINT || "http://localhost:9000";
-  const res = await fetch(`${endpoint}/obstor/webrpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 Obstor Dashboard" },
-    body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: `web.${method}`, params }),
-    cache: "no-store",
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.result as T;
+// Login doesn't need session, fail is LoginFailure
+async function rpcUnauthed(method: string, params: Record<string, unknown>): Promise<LoginResult> {
+  try {
+    const res = await fetch(`${rpcEndpoint()}/obstor/webrpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 Obstor Dashboard" },
+      body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: `web.${method}`, params }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return classifyLoginResponse(res.status, res.headers.get("content-type"), await res.text());
+  } catch {
+    return { ok: false, failure: { kind: "network" } };
+  }
 }
 
 export async function logoutAction() {
@@ -101,237 +115,288 @@ export async function logoutAction() {
 }
 
 // Buckets CRUD
-export async function deleteBucketAction(bucketName: string) {
+export async function deleteBucketAction(
+  bucketName: string,
+): Promise<{ success: true } | { error: string }> {
   try {
     await rpc("DeleteBucket", { bucketName });
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to delete bucket" };
+    return { error: msg(err, "Failed to delete bucket") };
   }
-
   revalidatePath("/", "layout");
-  redirect("/");
+  return { success: true };
+}
+
+// Only create bucket, other settings use bucket tabs
+export async function createBucketAction(
+  bucketName: string,
+  objectLock: boolean,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await rpc("MakeBucket", { bucketName, lockEnabled: objectLock });
+  } catch (err) {
+    return { error: msg(err, "Failed to create bucket") };
+  }
+  revalidatePath("/", "layout");
+  return { success: true };
 }
 
 // Bucket Settings
-function publicAccessToBackend(policy: BucketSettings["publicAccess"]): string {
-  switch (policy) {
-    case "public-read":
-      return "readonly";
-    case "public-read-write":
-      return "readwrite";
-    default:
-      return "none";
+export async function getBucketFeaturesAction(): Promise<BucketFeatures | { error: string }> {
+  try {
+    return await rpc<BucketFeatures>("BucketFeatures");
+  } catch (err) {
+    return { error: msg(err, "Failed to load server features") };
   }
 }
 
-export async function getBucketSettingsAction(
+// Features and read perm settings
+export interface BucketConfigLoad {
+  config: BucketConfig;
+  features: BucketFeatures | null;
+  readable: Readable;
+}
+
+async function readBucketConfig(bucketName: string): Promise<BucketConfigLoad> {
+  const [policy, raw, toggles, features] = await rpcSettled([
+    rpc<{ policy: string }>("GetBucketPolicy", { bucketName, prefix: "" }),
+    rpc<RawBucketConfig>("GetBucketConfig", { bucketName }),
+    rpc<{ s3Enabled: boolean; sftpEnabled: boolean }>("GetBucketToggles", { bucketName }),
+    rpc<BucketFeatures>("BucketFeatures"),
+  ]);
+  if (raw.status === "rejected") {
+    throw new Error(msg(raw.reason, "Failed to load bucket settings"));
+  }
+  const { config, readable } = parseBucketConfig(
+    raw.value,
+    policy.status === "fulfilled" ? policy.value.policy : null,
+    toggles.status === "fulfilled" ? toggles.value : null,
+  );
+  return { config, features: features.status === "fulfilled" ? features.value : null, readable };
+}
+
+export async function getBucketConfigAction(
   bucketName: string,
-): Promise<BucketSettings | { error: string }> {
+): Promise<BucketConfigLoad | { error: string }> {
   try {
-    let cannedPublic: BucketSettings["publicAccess"] = "private";
-    try {
-      const res = await rpc<{ policy: string }>("GetBucketPolicy", {
-        bucketName,
-        prefix: "",
-      });
-      if (res.policy === "readonly") cannedPublic = "public-read";
-      else if (res.policy === "readwrite" || res.policy === "writeonly")
-        cannedPublic = "public-read-write";
-    } catch {
-      // Todo: Add error handling
-    }
-
-    // Bucket filters
-    const snap = await getAccessSnapshotAction();
-    const idx = buildAccessIndex(snap.buckets, snap.policies, snap.users);
-
-    const rows: PolicyRow[] = idx.policies
-      .filter((p) => policyGrants(p, bucketName) && !p.catchAll && !p.adminOnly)
-      .map((p) => ({
-        name: p.name,
-        policy: p.policy,
-        origin: policyExclusiveTo(p, bucketName) ? "exclusive" : "shared",
-      }));
-    const manageable = new Set(rows.map((r) => r.name));
-    const users: IAMUser[] = idx.users
-      .filter((u) => u.policies.some((pn) => manageable.has(pn)))
-      .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies }));
-    const shownUsers = new Set(users.map((u) => u.accessKey));
-
-    let s3Enabled = true;
-    let sftpEnabled = true;
-    try {
-      const res = await rpc<{ s3Enabled: boolean; sftpEnabled: boolean }>("GetBucketToggles", {
-        bucketName,
-      });
-      s3Enabled = res.s3Enabled;
-      sftpEnabled = res.sftpEnabled;
-    } catch {
-      // Todo: Add error handling
-    }
-
-    return {
-      name: bucketName,
-      publicAccess: cannedPublic,
-      versioning: false,
-      objectLocking: false,
-      quotaEnabled: false,
-      quotaType: "hard",
-      quotaSize: "",
-      quotaUnit: "GB",
-      encryptionEnabled: false,
-      encryptionType: "SSE-S3",
-      kmsKeyId: "",
-      tags: [],
-      policies: rows,
-      users,
-      removedPolicies: [],
-      detachedUsers: [],
-      catchAllPolicies: idx.policies.filter((p) => p.catchAll).map((p) => p.name),
-      attachablePolicies: idx.policies
-        .filter((p) => !manageable.has(p.name) && !p.catchAll && !p.adminOnly && !p.parseError)
-        .map((p) => ({
-          name: p.name,
-          policy: p.policy,
-          origin: "shared" as const,
-        })),
-      attachableUsers: idx.users
-        .filter((u) => !shownUsers.has(u.accessKey))
-        .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies })),
-      sftpEnabled,
-      s3Enabled,
-      placementStrategy: "smart",
-      regions: [],
-    };
+    return await readBucketConfig(bucketName);
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to load bucket settings",
-    };
+    return { error: msg(err, "Failed to load bucket settings") };
   }
 }
 
-export async function createBucketWithSettingsAction(
-  settings: BucketSettings,
-): Promise<{ success: true; bucketName: string } | { error: string }> {
-  if (RESERVED_BUCKET_NAMES.has(settings.name)) {
-    return { error: `${settings.name} is reserved by the console. Pick another name.` };
-  }
+// Save changed settings
+export async function saveBucketConfigAction(
+  bucketName: string,
+  loaded: BucketConfig,
+  next: BucketConfig,
+): Promise<{ error: string; load: BucketConfigLoad | null }> {
+  const plan = configChanges(loaded, sectionConfig(loaded, next, "settings"));
+  if ("error" in plan) return { error: plan.error, load: null };
   try {
-    await rpc("MakeBucket", { bucketName: settings.name });
-    await applyBucketSettings(settings);
-    return { success: true, bucketName: settings.name };
-  } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to create bucket",
-    };
+    let error = "";
+    for (const change of plan.changes) {
+      try {
+        await rpc(change.rpc, { bucketName, ...change.params });
+      } catch (err) {
+        error = `${change.label}: ${msg(err, "request failed")}`;
+        break;
+      }
+    }
+    const load = await readBucketConfig(bucketName).catch((err) => {
+      rethrowSessionError(err);
+      return null;
+    });
+    return { error, load };
   } finally {
     revalidatePath("/", "layout");
   }
 }
 
-export async function updateBucketSettingsAction(
-  settings: BucketSettings,
-): Promise<{ success: true } | { error: string }> {
+// Bucket policies and users from IAM
+function buildAccessDraft(
+  bucketName: string,
+  config: BucketConfig,
+  snap: AccessSnapshot,
+): AccessDraft {
+  const idx = buildAccessIndex(snap.buckets, snap.policies, snap.users);
+  const policies: PolicyRow[] = idx.policies
+    .filter((p) => policyGrants(p, bucketName) && !p.catchAll && !p.adminOnly)
+    .map((p) => ({
+      name: p.name,
+      policy: p.policy,
+      origin: policyExclusiveTo(p, bucketName) ? "exclusive" : "shared",
+    }));
+  const manageable = new Set(policies.map((r) => r.name));
+  const users: IAMUser[] = idx.users
+    .filter((u) => u.policies.some((pn) => manageable.has(pn)))
+    .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies }));
+  const shownUsers = new Set(users.map((u) => u.accessKey));
+  return {
+    ...config,
+    name: bucketName,
+    policies,
+    users,
+    removedPolicies: [],
+    detachedUsers: [],
+    catchAllPolicies: idx.policies.filter((p) => p.catchAll).map((p) => p.name),
+    attachablePolicies: idx.policies
+      .filter((p) => !manageable.has(p.name) && !p.catchAll && !p.adminOnly && !p.parseError)
+      .map((p) => ({ name: p.name, policy: p.policy, origin: "shared" as const })),
+    attachableUsers: idx.users
+      .filter((u) => !shownUsers.has(u.accessKey))
+      .map((u) => ({ accessKey: u.accessKey, status: u.status, policies: u.policies })),
+  };
+}
+
+export async function getBucketAccessAction(
+  bucketName: string,
+): Promise<BucketAccessLoad | { error: string }> {
   try {
-    await applyBucketSettings(settings);
-    return { success: true };
-  } catch (err) {
+    const [{ config, readable }, snap] = await Promise.all([
+      readBucketConfig(bucketName),
+      getAccessSnapshotAction(),
+    ]);
     return {
-      error: err instanceof Error ? err.message : "Failed to update bucket settings",
+      draft: buildAccessDraft(bucketName, config, snap),
+      readable,
+      iam: !snap.policiesError && !snap.usersError,
     };
+  } catch (err) {
+    return { error: msg(err, "Failed to load bucket access") };
+  }
+}
+
+// Save public access and IAM edits
+export async function saveBucketAccessAction(
+  draft: AccessDraft,
+  loaded: AccessDraft,
+  iam: boolean,
+): Promise<{ error: string; load: BucketAccessLoad | null; keepDraft: boolean }> {
+  const plan = configChanges(loaded, sectionConfig(loaded, draft, "access"));
+  if ("error" in plan) return { error: plan.error, load: null, keepDraft: true };
+  let listing: IAMListing | null = null;
+  if (iam) {
+    try {
+      listing = await checkIAMSettings(draft);
+    } catch (err) {
+      return { error: msg(err, "Failed to check users and policies"), load: null, keepDraft: true };
+    }
+  }
+  const { error, iamWritten } = await applyBucketSettings(draft, loaded, plan.changes, listing);
+  try {
+    const load = await getBucketAccessAction(draft.name);
+    return { error, load: "error" in load ? null : load, keepDraft: !iamWritten };
   } finally {
     revalidatePath("/", "layout");
   }
 }
 
-async function applyBucketSettings(settings: BucketSettings) {
-  await rpc("SetBucketPolicy", {
-    bucketName: settings.name,
-    prefix: "",
-    policy: publicAccessToBackend(settings.publicAccess),
-  });
+interface IAMListing {
+  policyNames: Set<string>;
+  heldBy: Map<string, string[]>;
+}
 
-  // Feature Toggles
-  await rpc("SetBucketToggles", {
-    bucketName: settings.name,
-    s3Enabled: settings.s3Enabled,
-    sftpEnabled: settings.sftpEnabled,
-  });
-
-  // List IAM policies
-  const resolveName = (n: string) => n.split("BUCKET_NAME").join(settings.name);
-
+// Load policies and users before save
+async function checkIAMSettings(settings: AccessDraft): Promise<IAMListing> {
   const [allPolicies, allUsers] = await Promise.all([listPolicies(), listUsers()]);
   const policyNames = new Set(allPolicies.map((p) => p.name));
   const userKeys = new Set(allUsers.map((u) => u.accessKey));
-  const heldBy = new Map(allUsers.map((u) => [u.accessKey, u.policies]));
+  const err = iamSettingsError(
+    settings.name,
+    settings.policies,
+    settings.users,
+    policyNames,
+    userKeys,
+  );
+  if (err) throw new Error(err);
+  return { policyNames, heldBy: new Map(allUsers.map((u) => [u.accessKey, u.policies])) };
+}
 
-  for (const p of settings.policies) {
-    if (p.origin === "shared") continue;
-    const name = resolveName(p.name);
-    if (!name.trim()) throw new Error("Every policy needs a name.");
+type IAMWrite = (label: string, method: string, params: Record<string, unknown>) => Promise<void>;
+
+// Save config in order
+async function applyBucketSettings(
+  draft: AccessDraft,
+  loaded: AccessDraft,
+  changes: ConfigChange[],
+  iam: IAMListing | null,
+): Promise<{ error: string; iamWritten: boolean }> {
+  let iamWritten = false;
+  const write: IAMWrite = async (label, method, params) => {
     try {
-      JSON.parse(p.policy.split("BUCKET_NAME").join(settings.name));
-    } catch {
-      throw new Error(`Policy ${name} is not valid JSON.`);
+      await rpc(method, params);
+    } catch (err) {
+      throw new Error(`${label}: ${msg(err, "request failed")}`);
     }
-    if (p.origin === "new" && policyNames.has(name)) {
-      throw new Error(
-        `A policy named ${name} already exists. Rename this one, or use Attach existing policy.`,
-      );
+    iamWritten = true;
+  };
+  try {
+    for (const change of changes) {
+      try {
+        await rpc(change.rpc, { bucketName: draft.name, ...change.params });
+      } catch (err) {
+        throw new Error(`${change.label}: ${msg(err, "request failed")}`);
+      }
     }
+    // No IAM listings means no IAM editors or writes
+    if (iam) await applyIAM(draft, loaded, iam, write);
+    return { error: "", iamWritten };
+  } catch (err) {
+    return { error: msg(err, "Failed to save access settings"), iamWritten };
   }
-  for (const u of settings.users) {
-    if (u.pendingSecretKey && userKeys.has(u.accessKey)) {
-      throw new Error(`Access key ${u.accessKey} already exists. Use Attach existing user.`);
-    }
-  }
-  for (const p of settings.policies) {
-    if (p.origin === "shared") continue;
-    await rpc("SetCannedPolicy", {
-      name: resolveName(p.name),
-      policy: p.policy.split("BUCKET_NAME").join(settings.name),
-    });
+}
+
+async function applyIAM(draft: AccessDraft, loaded: AccessDraft, iam: IAMListing, write: IAMWrite) {
+  const resolveName = (n: string) => n.split("BUCKET_NAME").join(draft.name);
+  const { policyNames, heldBy } = iam;
+
+  for (const p of policyWrites(draft.name, loaded.policies, draft.policies)) {
+    await write(`Policy ${p.name}`, "SetCannedPolicy", { ...p });
   }
 
   // Create users that were added on bucket modal
-  for (const user of settings.users) {
+  for (const user of draft.users) {
     if (!user.pendingSecretKey) continue;
-    await rpc("AddIAMUser", {
+    const label = `User ${user.accessKey}`;
+    await write(label, "AddIAMUser", {
       accessKey: user.accessKey,
       secretKey: user.pendingSecretKey,
       policy: "", // Policies attached later
     });
     if (user.status === "disabled") {
-      await rpc("SetIAMUserStatus", { accessKey: user.accessKey, enabled: false });
+      await write(label, "SetIAMUserStatus", { accessKey: user.accessKey, enabled: false });
     }
   }
 
   // Attach policies
-  const modalManaged = new Set<string>([
-    ...settings.policies.map((p) => (p.origin === "shared" ? p.name : resolveName(p.name))),
-    ...settings.removedPolicies,
+  const tabManaged = new Set<string>([
+    ...draft.policies.map((p) => (p.origin === "shared" ? p.name : resolveName(p.name))),
+    ...draft.removedPolicies,
   ]);
   const known = new Set<string>([
     ...policyNames,
-    ...settings.policies.map((p) => resolveName(p.name)),
+    ...draft.policies.map((p) => resolveName(p.name)),
   ]);
 
   const targets = [
-    ...settings.users.map((u) => ({
+    ...draft.users.map((u) => ({
       accessKey: u.accessKey,
       checked: u.policies.map(resolveName),
     })),
-    ...settings.detachedUsers.map((accessKey) => ({ accessKey, checked: [] as string[] })),
+    ...draft.detachedUsers.map((accessKey) => ({ accessKey, checked: [] as string[] })),
   ];
 
   for (const t of targets) {
     const held = heldBy.get(t.accessKey) ?? [];
-    // Keep what this modal did not manage
-    const keep = held.filter((pn) => !modalManaged.has(pn) && known.has(pn));
+    // Keep what this tab did not manage
+    const keep = held.filter((pn) => !tabManaged.has(pn) && known.has(pn));
     const final = Array.from(new Set([...keep, ...t.checked]));
     if (final.length === held.length && final.every((pn) => held.includes(pn))) continue;
-    await rpc("SetIAMUserPolicy", { accessKey: t.accessKey, policies: final.join(",") });
+    await write(`User ${t.accessKey}`, "SetIAMUserPolicy", {
+      accessKey: t.accessKey,
+      policies: final.join(","),
+    });
   }
 }
 
@@ -350,7 +415,7 @@ export async function savePolicyAction(name: string, policyJSON: string) {
     await rpc("SetCannedPolicy", { name, policy: policyJSON });
     return { success: true };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to save policy" };
+    return { error: msg(err, "Failed to save policy") };
   }
 }
 
@@ -359,7 +424,7 @@ export async function deletePolicyAction(name: string) {
     await rpc("DeleteCannedPolicy", { name });
     return { success: true };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to delete policy" };
+    return { error: msg(err, "Failed to delete policy") };
   }
 }
 
@@ -378,7 +443,7 @@ export async function deleteUserAction(accessKey: string) {
     await rpc("RemoveIAMUser", { accessKey });
     return { success: true };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to remove user" };
+    return { error: msg(err, "Failed to remove user") };
   }
 }
 
@@ -387,45 +452,48 @@ export async function setUserStatusAction(accessKey: string, enabled: boolean) {
     await rpc("SetIAMUserStatus", { accessKey, enabled });
     return { success: true };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to set user status" };
+    return { error: msg(err, "Failed to set user status") };
   }
 }
 
 // Objects
-export async function deleteObjectAction(bucketName: string, objectName: string) {
+export async function deleteObjectsAction(
+  bucketName: string,
+  names: string[],
+): Promise<{ success: true } | { error: string }> {
   try {
-    await rpc("RemoveObject", { bucketname: bucketName, objects: [objectName] });
+    await rpc("RemoveObject", { bucketname: bucketName, objects: names });
     return { success: true };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to delete object" };
+    return { error: msg(err, "Failed to delete") };
   }
 }
 
 export async function getShareLink(bucketName: string, objectName: string, expiry = 300) {
   try {
     const result = await rpc<{ url: string }>("PresignedGet", {
-      host: process.env.OBSTOR_HOST || "localhost:9000",
+      host: publicHost(),
       bucket: bucketName,
       object: objectName,
       expiry,
     });
     return { url: result.url };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to generate link" };
+    return { error: msg(err, "Failed to generate link") };
   }
 }
 
 export async function getUploadURL(bucketName: string, prefix: string, objectName: string) {
   try {
     const result = await rpc<{ url: string }>("PresignedPut", {
-      host: process.env.OBSTOR_HOST || "localhost:9000",
+      host: publicHost(),
       bucket: bucketName,
       prefix,
       object: objectName,
     });
     return { url: result.url };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to get upload URL" };
+    return { error: msg(err, "Failed to get upload URL") };
   }
 }
 
@@ -437,21 +505,38 @@ export async function getObjectChecksums(bucketName: string, objectName: string)
     );
     return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to compute checksums" };
+    return { error: msg(err, "Failed to compute checksums") };
   }
 }
 
 export async function getDownloadURL(bucketName: string, objectName: string) {
   try {
     const result = await rpc<{ url: string }>("PresignedGet", {
-      host: process.env.OBSTOR_HOST || "localhost:9000",
+      host: publicHost(),
       bucket: bucketName,
       object: objectName,
       expiry: 300,
     });
     return { url: result.url };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to get download URL" };
+    return { error: msg(err, "Failed to get download URL") };
+  }
+}
+
+// Drive endpoints per object
+export async function getObjectLocationsAction(
+  bucketName: string,
+  objects: string[],
+): Promise<Record<string, string[]> | { error: string }> {
+  if (objects.length === 0) return {};
+  try {
+    const r = await rpc<{ objects: { name: string; endpoints: string[] | null }[] | null }>(
+      "GetObjectLocations",
+      { bucketName, objects },
+    );
+    return Object.fromEntries((r.objects ?? []).map((o) => [o.name, o.endpoints ?? []]));
+  } catch (err) {
+    return { error: msg(err, "Failed to load object locations") };
   }
 }
 
@@ -464,11 +549,9 @@ export interface AccessSnapshot {
   usersError?: string;
 }
 
-const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
-
 // Partial failure is reported per list
 export async function getAccessSnapshotAction(): Promise<AccessSnapshot> {
-  const [b, p, u] = await Promise.allSettled([listBuckets(), listPolicies(), listUsers()]);
+  const [b, p, u] = await rpcSettled([listBuckets(), listPolicies(), listUsers()]);
   return {
     buckets: b.status === "fulfilled" ? b.value.map((x) => x.name) : [],
     policies: p.status === "fulfilled" ? p.value : [],
@@ -483,7 +566,8 @@ export async function getAccessBadgeAction(): Promise<{ canManage: boolean; noPo
   try {
     const users = await listUsers();
     return { canManage: true, noPolicy: users.filter((u) => u.policies.length === 0).length };
-  } catch {
+  } catch (err) {
+    rethrowSessionError(err);
     return { canManage: false, noPolicy: 0 };
   }
 }
@@ -515,7 +599,8 @@ export async function renamePolicyAction(oldName: string, newName: string, polic
       const next = u.policies.map((pn) => (pn === oldName ? newName : pn));
       try {
         await rpc("SetIAMUserPolicy", { accessKey: u.accessKey, policies: next.join(",") });
-      } catch {
+      } catch (err) {
+        rethrowSessionError(err);
         stuck.push(u.accessKey);
       }
     }
@@ -551,5 +636,77 @@ export async function rotateSecretAction(
     return { secretKey: res.secretKey };
   } catch (err) {
     return { error: msg(err, "Failed to rotate secret key") };
+  }
+}
+
+// Check fresh user listing
+export async function createUserAction(
+  accessKey: string,
+  policies: string[],
+): Promise<{ accessKey: string; secretKey: string } | { error: string }> {
+  try {
+    const existing = (await listUsers()).map((u) => u.accessKey);
+    const invalid = newUserError(accessKey, existing);
+    if (invalid) return { error: invalid };
+    const res = await rpc<{ accessKey: string; secretKey: string }>("AddIAMUser", {
+      accessKey: accessKey.trim(),
+      secretKey: "",
+      policy: policies.join(","),
+    });
+    return { accessKey: res.accessKey, secretKey: res.secretKey };
+  } catch (err) {
+    return { error: msg(err, "Failed to create user") };
+  } finally {
+    revalidatePath("/access");
+  }
+}
+
+// Notifications
+export async function getAttentionAction(): Promise<AttentionItem[] | { error: string }> {
+  try {
+    return (await rpc<{ items: AttentionItem[] | null }>("Attention")).items ?? [];
+  } catch (err) {
+    return { error: msg(err, "Failed to load notifications") };
+  }
+}
+
+// Returns token, caller signs out
+export async function changeSecretAction(
+  currentSecretKey: string,
+  newSecretKey: string,
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await rpc("SetAuth", { currentSecretKey, newSecretKey });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof RPCError && err.code === "InvalidCurrentSecret") {
+      return { error: "Current secret key is incorrect." };
+    }
+    return { error: msg(err, "Failed to change secret key") };
+  }
+}
+
+// Activity
+export async function listActivityAction(args: {
+  bucket?: string;
+  accessKey?: string;
+  group?: ActivityGroup | "";
+  before?: ActivityCursor | null;
+  limit?: number;
+}): Promise<ActivityPage | { error: string }> {
+  try {
+    const res = await rpc<Omit<ActivityPage, "events"> & { events: ActivityEvent[] | null }>(
+      "ListActivity",
+      {
+        bucket: args.bucket ?? "",
+        accessKey: args.accessKey ?? "",
+        api: args.group ?? "",
+        before: args.before ?? null,
+        limit: args.limit ?? 50,
+      },
+    );
+    return { ...res, events: res.events ?? [] };
+  } catch (err) {
+    return { error: msg(err, "Could not load activity") };
   }
 }

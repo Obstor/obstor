@@ -1,22 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { BucketModal } from "./BucketModal";
+import { useBuckets } from "./BucketProvider";
 
-export function CreateBucketButton() {
-  const [open, setOpen] = useState(false);
-
+export function CreateBucketButton({
+  className = "inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 font-body text-sm transition-colors disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11 bg-amber-500 font-semibold text-black hover:bg-amber-400",
+}: {
+  className?: string;
+}) {
+  const { openCreate } = useBuckets();
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex shrink-0 items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 font-body font-medium text-black text-xs transition-colors hover:bg-amber-400"
-      >
-        <span className="icon-[tabler--plus] block text-[13px]" />
-        Create bucket
-      </button>
-      <BucketModal open={open} onClose={() => setOpen(false)} editBucket={null} />
-    </>
+    <button type="button" onClick={openCreate} className={className}>
+      <span className="icon-[tabler--plus] text-base" />
+      Create bucket
+    </button>
   );
 }

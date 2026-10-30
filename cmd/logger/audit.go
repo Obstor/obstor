@@ -149,8 +149,20 @@ func GetAuditEntry(ctx context.Context) *audit.Entry {
 	return nil
 }
 
-// AuditLog - logs audit logs to all audit targets.
+var ActivityHook func(ctx context.Context, reqInfo *ReqInfo, statusCode int)
+
+// AuditLog logs requests for activity audit
 func AuditLog(ctx context.Context, w http.ResponseWriter, r *http.Request, reqClaims map[string]interface{}, filterKeys ...string) {
+	if ActivityHook != nil && w != nil && r != nil {
+		if reqInfo := GetReqInfo(ctx); reqInfo != nil {
+			status := 0
+			if rw, ok := w.(*ResponseWriter); ok {
+				status = rw.StatusCode
+			}
+			ActivityHook(ctx, reqInfo, status)
+		}
+	}
+
 	// Fast exit if there is not audit target configured
 	if len(AuditTargets) == 0 {
 		return
