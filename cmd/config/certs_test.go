@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -165,13 +166,15 @@ M9ofSEt/bdRD
 		certFile          string
 		expectedResultLen int
 		expectedErr       error
+		allowErrorDetails bool
 	}{
-		{"nonexistent-file", 0, nonexistentErr},
-		{tempFile1, 0, fmt.Errorf("empty public certificate file %s", tempFile1)},
-		{tempFile2, 0, fmt.Errorf("could not read PEM block from file %s", tempFile2)},
-		{tempFile3, 0, fmt.Errorf("x509: invalid RDNSequence: invalid attribute value")},
-		{tempFile4, 1, nil},
-		{tempFile5, 2, nil},
+		{"nonexistent-file", 0, nonexistentErr, false},
+		{tempFile1, 0, fmt.Errorf("empty public certificate file %s", tempFile1), false},
+		{tempFile2, 0, fmt.Errorf("could not read PEM block from file %s", tempFile2), false},
+		// Go's X.509 parser may append details to the malformed attribute error.
+		{tempFile3, 0, fmt.Errorf("x509: invalid RDNSequence: invalid attribute value"), true},
+		{tempFile4, 1, nil, false},
+		{tempFile5, 2, nil, false},
 	}
 
 	for _, testCase := range testCases {
@@ -183,7 +186,8 @@ M9ofSEt/bdRD
 			}
 		} else if err == nil {
 			t.Fatalf("error: expected = %v, got = <nil>", testCase.expectedErr)
-		} else if testCase.expectedErr.Error() != err.Error() {
+		} else if expected := testCase.expectedErr.Error(); err.Error() != expected &&
+			(!testCase.allowErrorDetails || !strings.HasPrefix(err.Error(), expected+": ")) {
 			t.Fatalf("error: expected = %v, got = %v", testCase.expectedErr, err)
 		}
 

@@ -1991,6 +1991,9 @@ func TestWebObjectLayerFaultyDisks(t *testing.T) {
 		t.Fatal("Cannot make bucket:", err)
 	}
 
+	// Policy reads faulty disks not cached metadata
+	globalBucketMetadataSys.Remove(bucketName)
+
 	// Set faulty disks to Erasure backend
 	z := obj.(*erasureServerPools)
 	xl := z.serverPools[0].sets[0]

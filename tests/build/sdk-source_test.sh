@@ -11,7 +11,8 @@ git init --quiet "$OBSTOR_SDK_SOURCE_ROOT/obstor-js"
 printf 'committed functional test\n' > "$OBSTOR_SDK_SOURCE_ROOT/obstor-js/tests/functional/functional-tests.js"
 git -C "$OBSTOR_SDK_SOURCE_ROOT/obstor-js" add .
 git -C "$OBSTOR_SDK_SOURCE_ROOT/obstor-js" -c commit.gpgsign=false -c user.name=Test -c user.email=test@example.invalid commit --quiet -m fixture
-export OBSTOR_JS_REF="$(git -C "$OBSTOR_SDK_SOURCE_ROOT/obstor-js" rev-parse HEAD)"
+OBSTOR_JS_REF="$(git -C "$OBSTOR_SDK_SOURCE_ROOT/obstor-js" rev-parse HEAD)"
+export OBSTOR_JS_REF
 printf 'uncommitted edit\n' > "$OBSTOR_SDK_SOURCE_ROOT/obstor-js/tests/functional/functional-tests.js"
 export TESTS_ROOT_DIR="$test_dir/tests"
 bash "$build_dir/obstor-js/install.sh"
