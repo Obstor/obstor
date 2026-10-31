@@ -17,5 +17,5 @@
 #
 
 # Always install the latest.
-# Using --break-system-packages for Ubuntu 24.04+ (PEP 668) - safe in containers
+# PEP 668 requires --break-system-packages inside this test container.
 python3 -m pip install --break-system-packages --upgrade --upgrade-strategy eager s3cmd

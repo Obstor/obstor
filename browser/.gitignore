@@ -17,5 +17,6 @@ release
 *.syso
 coverage.txt
 node_modules
+.pnpm-store
 .next
 tsconfig.tsbuildinfo

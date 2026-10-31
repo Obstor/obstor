@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ubuntu:latest
 
 LABEL maintainer="PGG Inc <oss@pgg.net>"
 
@@ -8,5 +8,5 @@ RUN apt update && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-rec
 
 ENV PATH=$PATH:/root/go/bin
 
-RUN go get github.com/go-bindata/go-bindata/go-bindata && \
-    go get github.com/elazarl/go-bindata-assetfs/go-bindata-assetfs
+RUN go install github.com/go-bindata/go-bindata/go-bindata@latest && \
+    go install github.com/elazarl/go-bindata-assetfs/go-bindata-assetfs@latest

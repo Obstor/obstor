@@ -4,7 +4,7 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
-  "files": { "ignoreUnknown": false, "includes": ["**"] },
+  "files": { "ignoreUnknown": false, "includes": ["**", "!pnpm-lock.yaml", "!**/.pnpm-store"] },
   "formatter": {
     "enabled": true,
     "includes": ["**"],

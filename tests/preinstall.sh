@@ -19,14 +19,14 @@
 source "${TESTS_ROOT_DIR}"/source.sh
 
 # install nodejs source list
-if ! $WGET --output-document=- https://deb.nodesource.com/setup_24.x | bash -; then
+if ! $WGET --output-document=- https://deb.nodesource.com/setup_26.x | bash -; then
 	echo "unable to set nodejs repository"
 	exit 1
 fi
 
 $APT install apt-transport-https
 
-# Ubuntu 24.04 provides .NET SDK directly from Ubuntu repos
+# Ubuntu provides .NET SDK directly from its repositories
 # No need for Microsoft package repository anymore
 
 $APT update
@@ -43,8 +43,8 @@ xargs --arg-file="${TESTS_ROOT_DIR}/install-packages.list" apt --quiet -y instal
 
 npm install --global "pnpm@${PNPM_VERSION}"
 
-# set python 3.12 as default (Ubuntu 24.04)
-update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+# Follow the Python version supplied by the Ubuntu image.
+update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 mkdir -p ${GRADLE_INSTALL_PATH}
 gradle_url="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"

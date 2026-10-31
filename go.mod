@@ -102,7 +102,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/obstor/crc64nvme v1.1.1 // indirect
 	github.com/obstor/md5-simd v1.1.2 // indirect
-	github.com/pandatix/go-abnf v0.5.3 // indirect
+	github.com/pandatix/go-abnf v0.5.4 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260916203055-22a1a467d9f0 // indirect
