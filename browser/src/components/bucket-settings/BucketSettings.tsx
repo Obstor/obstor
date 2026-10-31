@@ -19,7 +19,7 @@ import { LockingPanel } from "./LockingPanel";
 import { QuotaPanel } from "./QuotaPanel";
 import { initSection, type SectionAction, type SectionState, sectionReducer } from "./reducer";
 import { SaveBar } from "./shared";
-import { TagsPanel } from "./TagsPanel";
+import { AddTagButton, TagsPanel } from "./TagsPanel";
 import { VersioningPanel } from "./VersioningPanel";
 
 type Context = { features: BucketFeatures | null; readable: Readable };
@@ -121,7 +121,11 @@ function SettingsForm({ bucket, load }: { bucket: string; load: BucketConfigLoad
             autoEncryption={context.features?.autoEncryption === true}
           />
         </Card>
-        <Card title="Tags" icon="icon-[tabler--tag]">
+        <Card
+          title="Tags"
+          icon="icon-[tabler--tag]"
+          action={<AddTagButton config={draft} onChange={edit} reason={reason("tags")} />}
+        >
           <TagsPanel config={draft} onChange={edit} reason={reason("tags")} />
         </Card>
         <Card title="Protocol access" icon="icon-[tabler--plug-connected]">

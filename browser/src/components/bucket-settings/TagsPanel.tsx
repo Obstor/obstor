@@ -1,29 +1,28 @@
-import { cleanTags, MAX_USER_TAGS, tagError } from "@/lib/bucket-config";
+import { cleanTags, tagError } from "@/lib/bucket-config";
 import { Note, type PanelProps } from "./shared";
 
+export function AddTagButton({ config, onChange, reason }: PanelProps) {
+  return (
+    <button
+      type="button"
+      disabled={reason !== null}
+      onClick={() => onChange({ tags: [...config.tags, { key: "", value: "" }] })}
+      className="bg-surface font-body hover:bg-surface-overlay inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+    >
+      <span className="icon-[tabler--plus] text-base" />
+      Add tag
+    </button>
+  );
+}
+
 export function TagsPanel({ config, onChange, reason }: PanelProps) {
-  const tags = cleanTags(config.tags);
-  const problem = tagError(tags);
-  const addTag = () => onChange({ tags: [...config.tags, { key: "", value: "" }] });
+  const problem = tagError(cleanTags(config.tags));
   const removeTag = (i: number) => onChange({ tags: config.tags.filter((_, idx) => idx !== i) });
   const updateTag = (i: number, field: "key" | "value", val: string) =>
     onChange({ tags: config.tags.map((t, idx) => (idx === i ? { ...t, [field]: val } : t)) });
 
   return (
     <fieldset disabled={reason !== null} className="min-w-0 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] text-stone-400">
-          {tags.length} of {MAX_USER_TAGS}
-        </p>
-        <button
-          type="button"
-          onClick={addTag}
-          className="bg-surface font-body hover:bg-surface-overlay inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
-        >
-          <span className="icon-[tabler--plus] text-base" />
-          Add tag
-        </button>
-      </div>
       {reason && <Note text={reason} />}
 
       {config.tags.length === 0 ? (

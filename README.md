@@ -1,7 +1,7 @@
-# :lobster: Obstor Quickstart Guide
 ![Obstor Dashboard](docs/screenshots/dashboard.svg)
+# :lobster: Obstor Quickstart Guide
 
-Obstor is a high-performance object storage system supporting popular transfer protocols like S3 and SFTP, making it suitable for building high-performance infrastructure for machine learning, analytics, and application data workloads. Obstor is based on the 2021 Apache-licensed release of Obstor, prior to the project's transition to AGPL and later archival.
+Obstor is a high-performance object storage system supporting popular transfer protocols like S3 and SFTP, making it suitable for building high-performance infrastructure for machine learning, analytics, and application data workloads. Obstor is based on the 2021 Apache-licensed release of Minio, prior to the project's transition to AGPL and later archival.
 
 This README provides quickstart instructions on running Obstor on baremetal hardware, including Docker-based installations. For Kubernetes environments,
 use the [Obstor Kubernetes Operator](https://github.com/obstor/operator/blob/master/README.md).
