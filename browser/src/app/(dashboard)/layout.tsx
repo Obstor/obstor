@@ -55,7 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           }}
           host={publicHost()}
           server={{
-            version: info ? versionLabel(info.releaseTag) : "",
+            version: versionLabel(info?.releaseTag ?? "", process.env.NODE_ENV === "production"),
             region: info?.region ?? "",
             mode: info?.mode ?? "",
           }}

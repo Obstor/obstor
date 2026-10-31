@@ -429,7 +429,8 @@ function HealthRow({
         className={`inline-flex items-center gap-2 font-mono text-sm ${ok ? "text-green-400" : "text-amber-400"}`}
       >
         <span
-          className={`h-4 w-4 ${ok ? "icon-[tabler--circle-check] bg-green-500" : "icon-[tabler--circle-minus] bg-amber-500"}`}
+          aria-hidden="true"
+          className={`shrink-0 text-base ${ok ? "icon-[tabler--circle-check] text-green-400" : "icon-[tabler--circle-minus] text-amber-400"}`}
         />
         {offline > 0 ? `${offline} offline` : `${online} online`}
       </span>

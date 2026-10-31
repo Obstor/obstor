@@ -1,11 +1,7 @@
 "use client";
 
 import Link from "next/link";
-
-const BUTTON =
-  "inline-flex h-10 pointer-coarse:min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 font-body font-semibold text-[15px] transition-colors";
-const PRIMARY = `${BUTTON} bg-amber-500 text-black hover:bg-amber-400`;
-const SECONDARY = `${BUTTON} border border-stone-800 bg-surface text-stone-200 hover:border-stone-700 hover:bg-surface-overlay`;
+import { RefreshButton } from "./RefreshButton";
 
 // Shared error card in login layout
 export function ErrorScreen({
@@ -32,17 +28,27 @@ export function ErrorScreen({
           <p className="mt-1 mb-6 text-sm text-stone-400">{body}</p>
           <div className="flex gap-3">
             {onRetry ? (
-              <button type="button" onClick={onRetry} className={PRIMARY}>
-                <span aria-hidden="true" className="icon-[tabler--refresh] text-base" />
+              <RefreshButton
+                onRefresh={onRetry}
+                label="Reload"
+                className="font-body inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-[15px] font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 pointer-coarse:min-h-11"
+              >
                 Reload
-              </button>
+              </RefreshButton>
             ) : (
-              <Link href="/" className={PRIMARY}>
+              <Link
+                href="/"
+                className="font-body inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-[15px] font-semibold whitespace-nowrap text-black transition-colors hover:bg-amber-400 pointer-coarse:min-h-11"
+              >
                 <span aria-hidden="true" className="icon-[tabler--home] text-base" />
                 Overview
               </Link>
             )}
-            <button type="button" onClick={() => history.back()} className={SECONDARY}>
+            <button
+              type="button"
+              onClick={() => history.back()}
+              className="font-body bg-surface hover:bg-surface-overlay inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-stone-800 px-4 text-[15px] font-semibold whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 pointer-coarse:min-h-11"
+            >
               <span aria-hidden="true" className="icon-[tabler--arrow-left] text-base" />
               Back
             </button>

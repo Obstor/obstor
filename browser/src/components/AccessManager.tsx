@@ -255,8 +255,11 @@ export function AccessManager({ snapshot }: { snapshot: AccessSnapshot }) {
                               <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] pointer-coarse:h-11">
                                 <span className="inline-flex items-center gap-2 whitespace-nowrap text-stone-300">
                                   <span
-                                    className={`h-2 w-2 shrink-0 rounded-full ${
-                                      u.status === "enabled" ? "bg-green-500" : "bg-stone-500"
+                                    aria-hidden="true"
+                                    className={`shrink-0 text-base ${
+                                      u.status === "enabled"
+                                        ? "icon-[tabler--circle-check] text-green-400"
+                                        : "icon-[tabler--circle-minus] text-stone-500"
                                     }`}
                                   />
                                   {u.status === "enabled" ? "Active" : "Disabled"}
@@ -878,13 +881,12 @@ function PolicyDialog({
                 { value: "", label: "Add bucket to this policy" },
                 ...buckets.map((b) => ({ value: b, label: safeDisplayName(b) })),
               ]}
-              className="h-8"
             />
             <button
               type="button"
               disabled={!addBucket}
               onClick={() => widen(addBucket)}
-              className="bg-surface font-body hover:bg-surface-overlay inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
+              className="bg-surface font-body hover:bg-surface-overlay inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-800 px-3.5 text-sm font-medium whitespace-nowrap text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11"
             >
               Add
             </button>

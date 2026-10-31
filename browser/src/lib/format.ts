@@ -86,10 +86,10 @@ export function isStale(iso: string, now: number, maxMs: number): boolean {
 
 const SEMVER = /^v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?)$/;
 
-export function versionLabel(tag: string): string {
+export function versionLabel(tag: string, production = false): string {
   const m = SEMVER.exec(tag);
   if (m) return `v${m[1]}`;
-  return tag.startsWith("RELEASE.") ? tag : "Dev build";
+  return tag.startsWith("RELEASE.") ? tag : production ? "Production" : "Dev build";
 }
 
 const MODES: Record<string, string> = { fs: "FS", erasure: "Erasure", backend: "Backend" };

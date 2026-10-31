@@ -4,7 +4,7 @@ import Link from "next/link";
 import { type AttentionItem, bellLabel, type Severity, unseenItems } from "@/lib/attention";
 import { safeDisplayName } from "@/lib/safe-name";
 import { useAttention } from "./AttentionProvider";
-import { Menu, MenuItem, useCloseMenu } from "./Menu";
+import { Menu, useCloseMenu } from "./Menu";
 
 export const BELL_MENU_ID = "attention-bell";
 
@@ -38,16 +38,19 @@ export function Bell() {
         </>
       }
     >
-      <div className="flex items-center justify-between gap-2 py-1 pl-2.5">
+      <div className="flex items-center justify-between gap-3 px-2.5 py-2">
         <p className="font-body text-[12px] font-medium tracking-[0.08em] text-stone-400 uppercase">
           Notifications
         </p>
-        <MenuItem
-          onSelect={() => markSeen(items.map((item) => item.id))}
-          className={`w-auto shrink-0 text-xs ${unseen.length === 0 ? "text-stone-500" : ""}`}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => markSeen(items.map((item) => item.id))}
+          disabled={seen === null || unseen.length === 0}
+          className="hover:bg-surface-overlay focus-visible:bg-surface-overlay ml-auto inline-flex shrink-0 items-center justify-center rounded-md px-2 py-1 text-xs text-stone-200 outline-none disabled:text-stone-500"
         >
           Mark all read
-        </MenuItem>
+        </button>
       </div>
       {items.length === 0 ? (
         <p className="px-2.5 py-6 text-center text-sm text-stone-400">Nothing needs attention.</p>
@@ -81,8 +84,6 @@ function BellRow({
     close();
     onSeen();
   };
-  const row =
-    "flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left outline-none hover:bg-surface-overlay focus-visible:bg-surface-overlay";
   const body = (
     <>
       <span
@@ -103,13 +104,24 @@ function BellRow({
 
   if (item.href) {
     return (
-      <Link href={item.href} role="menuitem" prefetch={false} onClick={select} className={row}>
+      <Link
+        href={item.href}
+        role="menuitem"
+        prefetch={false}
+        onClick={select}
+        className="hover:bg-surface-overlay focus-visible:bg-surface-overlay flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left outline-none"
+      >
         {body}
       </Link>
     );
   }
   return (
-    <button type="button" role="menuitem" onClick={select} className={row}>
+    <button
+      type="button"
+      role="menuitem"
+      onClick={select}
+      className="hover:bg-surface-overlay focus-visible:bg-surface-overlay flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left outline-none"
+    >
       {body}
     </button>
   );

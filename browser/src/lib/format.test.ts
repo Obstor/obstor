@@ -74,6 +74,12 @@ assert.equal(versionLabel("RELEASE.2026-10-09T12-00-00Z"), "RELEASE.2026-10-09T1
 assert.equal(versionLabel("DEVELOPMENT.GOGET"), "Dev build");
 assert.equal(versionLabel("2026-10-09T12:00:00Z"), "Dev build");
 assert.equal(versionLabel(""), "Dev build");
+assert.equal(versionLabel("dev", true), "Production");
+assert.equal(versionLabel("main", true), "Production");
+assert.equal(versionLabel("DEVELOPMENT.GOGET", true), "Production");
+assert.equal(versionLabel("", true), "Production");
+assert.equal(versionLabel("1.2.3", true), "v1.2.3");
+assert.equal(versionLabel("dev", false), "Dev build");
 
 assert.equal(modeLabel("fs"), "FS");
 assert.equal(modeLabel("erasure"), "Erasure");

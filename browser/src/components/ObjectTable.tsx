@@ -22,6 +22,7 @@ import { safeDisplayName } from "@/lib/safe-name";
 import { LocalTime } from "./LocalTime";
 import { Menu, MenuItem } from "./Menu";
 import { Pager } from "./Pager";
+import { RefreshButton } from "./RefreshButton";
 import { SelectMenu } from "./SelectMenu";
 import { SearchField, Toolbar } from "./Toolbar";
 
@@ -156,15 +157,7 @@ export function ObjectTable({
             />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label="Refresh"
-              title="Refresh"
-              onClick={() => router.refresh()}
-              className="bg-surface hover:bg-surface-overlay inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-800 text-lg text-stone-200 transition-colors hover:border-stone-700 disabled:pointer-events-none disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            >
-              <span className="icon-[tabler--refresh]" />
-            </button>
+            <RefreshButton onRefresh={() => router.refresh()} />
             <button
               type="button"
               aria-label="New folder"
@@ -223,7 +216,7 @@ export function ObjectTable({
         </div>
       )}
 
-      <div className="px-4 pb-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+      <div className="px-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="overflow-clip rounded-lg border border-stone-800/70 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <table className="w-full table-fixed">
             <thead className="sticky top-0 z-20">

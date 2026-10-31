@@ -205,7 +205,12 @@ export default async function ClusterPage({
                       <td className="h-10 border-t border-stone-800/70 px-4 text-[13px] pointer-coarse:h-11">
                         <span className="inline-flex items-center gap-2">
                           <span
-                            className={`h-2 w-2 rounded-full ${n.online ? "bg-green-500" : "bg-red-500"}`}
+                            aria-hidden="true"
+                            className={`shrink-0 text-base ${
+                              n.online
+                                ? "icon-[tabler--circle-check] text-green-400"
+                                : "icon-[tabler--circle-x] text-red-400"
+                            }`}
                           />
                           {n.online ? "Online" : "Offline"}
                         </span>

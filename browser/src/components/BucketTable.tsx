@@ -130,7 +130,7 @@ export function BucketTable({
           />
         </Toolbar>
       )}
-      <div className="px-4 pb-4">
+      <div className="px-4">
         <div className="overflow-hidden rounded-lg border border-stone-800/70">
           <table className="w-full table-fixed">
             <thead>
