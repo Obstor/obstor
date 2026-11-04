@@ -100,7 +100,7 @@ function compactCount(v: number): string {
 export function countTicks(max: number, count = 4): Tick[] {
   return niceTicks(max, count).map((v) => ({
     value: v,
-    label: v.toLocaleString("en-US"),
+    label: compactCount(v),
     short: compactCount(v),
   }));
 }

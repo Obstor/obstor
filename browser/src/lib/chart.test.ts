@@ -50,7 +50,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   countTicks(1200).map((t) => t.label),
-  ["0", "500", "1,000", "1,500"],
+  ["0", "500", "1k", "1.5k"],
 );
 
 assert.deepEqual(plotScale([[0, 0], []], 10), { mode: "empty", domain: 10 });
@@ -137,7 +137,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   countTicks(1200).map((t) => t.short),
-  ["0", "500", "1K", "1.5K"],
+  ["0", "500", "1k", "1.5k"],
 );
 assert.deepEqual(
   countTicks(2_500_000).map((t) => t.short),
