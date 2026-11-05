@@ -130,7 +130,7 @@ export function BucketTable({
           />
         </Toolbar>
       )}
-      <div className="px-4">
+      <div className="px-4 pb-3">
         <div className="overflow-hidden rounded-lg border border-stone-800/70">
           <table className="w-full table-fixed">
             <thead>
@@ -264,7 +264,7 @@ export function BucketTable({
         </div>
       </div>
       {paged && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3">
           <span className="flex items-center gap-3 text-xs text-stone-400">
             <span className="font-mono">{plural(matched.length, "bucket")}</span>
             <AsOf iso={usageAsOf} />
